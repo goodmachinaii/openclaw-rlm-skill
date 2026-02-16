@@ -1,13 +1,104 @@
 ---
 name: rlm-engine
 description: >
-  Análisis profundo y razonamiento programático sobre historial completo de conversaciones.
-  Complementa memory_search: usa RLM cuando necesites RAZONAR sobre muchas sesiones,
-  no solo encontrar un snippet. Tarda 15-45 segundos y consume cuota.
+  Deep analysis and programmatic reasoning over complete conversation history.
+  Complements memory_search: use RLM when you need to REASON over many sessions,
+  not just find a snippet. Takes 15-45 seconds and consumes quota.
 version: 3.1.0
 ---
 
-# RLM Engine — Razonamiento profundo sobre historial
+# RLM Engine — Deep reasoning over history
+
+## Difference with memory_search
+
+OpenClaw already has `memory_search` (semantic search + BM25) which is fast and efficient.
+DO NOT use rlm-engine as a replacement for memory_search. They are complementary tools:
+
+| | memory_search (native) | rlm-engine (this skill) |
+|---|---|---|
+| Speed | Milliseconds | 15-45 seconds |
+| Result | Short snippets (~700 chars) | Complete analysis with reasoning |
+| Type | Search and return fragments | Reason by executing Python code over history |
+| Cost | 1 embedding call (cheap) | 3-8 LLM calls (consumes ChatGPT quota) |
+| Scope | Indexed chunks from MEMORY.md and memory/*.md | Complete transcripts from up to 30 sessions |
+
+**Golden rule:** Use `memory_search` first. Only scale to `rlm-engine` if memory_search
+can't resolve the question because it requires cross-referencing data, analyzing patterns,
+or reasoning over large volumes of history.
+
+## When to use rlm-engine
+
+Use this skill ONLY when the question requires something memory_search CANNOT do:
+
+- **Cross-reference information across multiple sessions:** "Compare what we discussed about project X
+  last week with what we said today"
+- **Analyze patterns or trends:** "What are the most frequent topics of the last month?"
+  "How has my opinion about Y evolved?"
+- **Complex reasoning over extensive history:** "Find all decisions we made
+  about infrastructure and evaluate which are still pending"
+- **Counting, statistics or aggregation:** "How many times have we talked about Kubernetes?"
+  "What percentage of sessions mentioned work topics vs personal?"
+- **Questions that require reading complete sessions**, not just snippets:
+  "Summarize EVERYTHING we've worked on in the migration project"
+
+## When NOT to use (use memory_search instead)
+
+- **Find specific data:** "What was the WiFi password I mentioned?"
+  → memory_search finds it in milliseconds
+- **Remember a simple fact:** "Do you remember the restaurant name I recommended?"
+  → memory_search is enough
+- **Current session context** → you already have it in context, no tool needed
+- **Greetings, casual chat, real-time tasks** → don't require history
+- **Web searches** → use navigation tools, not history
+
+## Decision flow
+
+```
+User asks question about history
+  │
+  ├─ Can I answer with current context? → Yes → Answer directly
+  │
+  ├─ Is it specific data or snippet? → Yes → Use memory_search
+  │
+  ├─ Did memory_search return sufficient result? → Yes → Answer with that
+  │
+  └─ Does it require cross-referencing sessions, analyzing patterns, or reasoning
+      over large volumes? → Yes → Use rlm-engine (this skill)
+```
+
+## Invocation
+
+1. Send to user first:
+   "Analyzing your history with RLM... this may take 15-45 seconds."
+
+2. Execute:
+
+```bash
+cd ~/openclaw-rlm-skill && uv run python src/rlm_bridge.py \
+  --query "EXACT USER QUESTION" \
+  --root-model gpt-5.3-codex \
+  --sub-model gpt-5.1-codex-mini \
+  --fallback-model gpt-5.2
+```
+
+3. Result is JSON:
+   - `status: "ok"` → respond with `response` field
+   - `status: "rate_limited"` → communicate ChatGPT quota reached, suggest waiting
+   - `status: "skipped"` → not enough history, respond with what you have in MEMORY.md
+   - `status: "error"` → inform the problem, offer using memory_search as alternative
+
+## Models and costs
+
+- Root LM: gpt-5.3-codex (main reasoning, 1 call per query)
+- Sub-LMs: gpt-5.1-codex-mini (context navigation, 2-7 calls, 4x more quota efficient)
+- Fallback: gpt-5.2 (if primary unavailable or rate limited)
+- Cost: $0 additional — uses existing ChatGPT subscription via CLIProxyAPI
+- Estimated consumption: ~7-12 credits per query (vs ~15-40 without sub-LM optimization)
+- Warning: using this skill frequently consumes quota faster than memory_search
+
+---
+
+# Español
 
 ## Diferencia con memory_search
 
@@ -22,10 +113,6 @@ NO uses rlm-engine como reemplazo de memory_search. Son herramientas complementa
 | Costo | 1 embedding call (barato) | 3-8 llamadas LLM (consume cuota ChatGPT) |
 | Alcance | Chunks indexados de MEMORY.md y memory/*.md | Transcripciones completas de hasta 30 sesiones |
 
-**Regla de oro:** Usa primero `memory_search`. Solo escala a `rlm-engine` si memory_search
-no puede resolver la pregunta porque requiere cruzar datos, analizar patrones, o razonar
-sobre grandes volúmenes de historial.
-
 ## Cuándo usar rlm-engine
 
 Usa este skill SOLO cuando la pregunta requiera algo que memory_search NO puede hacer:
@@ -38,33 +125,13 @@ Usa este skill SOLO cuando la pregunta requiera algo que memory_search NO puede 
   sobre infraestructura y evalúa cuáles siguen pendientes"
 - **Conteo, estadísticas o agregación:** "¿Cuántas veces hemos hablado de Kubernetes?"
   "¿En qué porcentaje de sesiones mencioné temas de trabajo vs personales?"
-- **Preguntas que requieren leer sesiones completas**, no solo snippets:
-  "Resume TODO lo que hemos trabajado en el proyecto de migración"
 
 ## Cuándo NO usar (usa memory_search en su lugar)
 
 - **Buscar un dato puntual:** "¿Cuál era la contraseña del WiFi que mencioné?"
-  → memory_search lo encuentra en milisegundos
 - **Recordar un hecho simple:** "¿Recuerdas el nombre del restaurante que recomendé?"
-  → memory_search es suficiente
-- **Contexto de la sesión actual** → ya lo tienes en el contexto, no necesitas ninguna herramienta
+- **Contexto de la sesión actual** → ya lo tienes en el contexto
 - **Saludos, chat casual, tareas en tiempo real** → no requieren historial
-- **Búsquedas web** → usa herramientas de navegación, no historial
-
-## Flujo de decisión
-
-```
-Usuario hace pregunta sobre historial
-  │
-  ├─ ¿Puedo responder con el contexto actual? → Sí → Responde directo
-  │
-  ├─ ¿Es un dato puntual o snippet? → Sí → Usa memory_search
-  │
-  ├─ ¿memory_search ya devolvió resultado suficiente? → Sí → Responde con eso
-  │
-  └─ ¿Requiere cruzar sesiones, analizar patrones, o razonar
-      sobre grandes volúmenes? → Sí → Usa rlm-engine (este skill)
-```
 
 ## Invocación
 
@@ -83,15 +150,6 @@ cd ~/openclaw-rlm-skill && uv run python src/rlm_bridge.py \
 
 3. El resultado es JSON:
    - `status: "ok"` → responde con el campo `response`
-   - `status: "rate_limited"` → comunica que la cuota ChatGPT está alcanzada, sugiere esperar
-   - `status: "skipped"` → no hay suficiente historial, responde con lo que tengas en MEMORY.md
-   - `status: "error"` → informa el problema, ofrece usar memory_search como alternativa
-
-## Modelos y costos
-
-- Root LM: gpt-5.3-codex (razonamiento principal, 1 llamada por query)
-- Sub-LMs: gpt-5.1-codex-mini (navegación de contexto, 2-7 llamadas, 4x más eficiente en cuota)
-- Fallback: gpt-5.2 (si el modelo principal no está disponible o rate limited)
-- Costo: $0 adicional — usa la suscripción ChatGPT existente via CLIProxyAPI
-- Consumo estimado: ~7-12 créditos por query (vs ~15-40 sin la optimización de sub-LMs)
-- Advertencia: usar este skill frecuentemente consume cuota más rápido que memory_search
+   - `status: "rate_limited"` → comunica que la cuota ChatGPT está alcanzada
+   - `status: "skipped"` → no hay suficiente historial
+   - `status: "error"` → informa el problema
