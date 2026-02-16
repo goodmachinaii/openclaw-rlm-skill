@@ -1,19 +1,19 @@
-// Fragmento de ~/.openclaw/openclaw.json
+// Fragment of ~/.openclaw/openclaw.json
 //
-// Este archivo es SOLO REFERENCIA. El skill RLM NO requiere cambios aquí.
-// El skill invoca RLM via bash, no via el sistema de modelos de OpenClaw.
+// This file is FOR REFERENCE ONLY. The RLM skill does NOT require changes here.
+// The skill invokes RLM via bash, not via OpenClaw's model system.
 //
-// La configuración de modelos aquí es la que OpenClaw ya usa para el agente
-// principal (Telegram, etc.).
+// The model configuration here is what OpenClaw already uses for the main
+// agent (Telegram, etc.).
 
 {
   "agents": {
     "defaults": {
       "model": {
-        // Modelo principal para el agente OpenClaw
+        // Main model for OpenClaw agent
         "primary": "openai-codex/gpt-5.3-codex",
 
-        // Fallbacks si el principal no está disponible
+        // Fallbacks if primary is unavailable
         "fallbacks": ["openai-codex/gpt-5.2"]
       }
     }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Tests para verificar configuración de modelos en run_rlm()
-Verifica que other_backends se pasa correctamente cuando root != sub model
+Tests to verify model configuration in run_rlm()
+Verifies other_backends is passed correctly when root != sub model
 """
 
 from pathlib import Path
@@ -14,30 +14,30 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from rlm_bridge import run_rlm
 
 
-class TestRunRlmModelos:
-    """Tests para verificar configuración de modelos en run_rlm()"""
+class TestRunRlmModels:
+    """Tests to verify model configuration in run_rlm()"""
 
     @patch("rlm_bridge.RLM")
-    def test_other_backends_cuando_modelos_diferentes(self, mock_rlm_class):
-        """Verifica que other_backends se configura cuando root != sub model"""
+    def test_other_backends_when_models_different(self, mock_rlm_class):
+        """Verifies other_backends is configured when root != sub model"""
         # Setup mock
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
-        mock_result.response = "Respuesta de prueba"
+        mock_result.response = "Test response"
         mock_rlm_instance.completion.return_value = mock_result
         mock_rlm_class.return_value = mock_rlm_instance
 
-        # Ejecutar con modelos diferentes
+        # Execute with different models
         result = run_rlm(
-            query="¿Qué hicimos ayer?",
-            context="Contexto de prueba",
+            query="What did we do yesterday?",
+            context="Test context",
             root_model="gpt-5.3-codex",
-            sub_model="gpt-5.1-codex-mini",  # Diferente al root
+            sub_model="gpt-5.1-codex-mini",  # Different from root
             base_url="http://localhost:8317/v1",
             api_key="test-key",
         )
 
-        # Verificar que RLM se llamó con other_backends
+        # Verify RLM was called with other_backends
         call_kwargs = mock_rlm_class.call_args.kwargs
         assert "other_backends" in call_kwargs
         assert call_kwargs["other_backends"] == ["openai"]
@@ -45,41 +45,41 @@ class TestRunRlmModelos:
         assert call_kwargs["other_backend_kwargs"][0]["model_name"] == "gpt-5.1-codex-mini"
 
     @patch("rlm_bridge.RLM")
-    def test_sin_other_backends_cuando_modelos_iguales(self, mock_rlm_class):
-        """Verifica que other_backends NO se configura cuando root == sub model"""
+    def test_no_other_backends_when_models_same(self, mock_rlm_class):
+        """Verifies other_backends is NOT configured when root == sub model"""
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
-        mock_result.response = "Respuesta"
+        mock_result.response = "Response"
         mock_rlm_instance.completion.return_value = mock_result
         mock_rlm_class.return_value = mock_rlm_instance
 
-        # Ejecutar con mismo modelo
+        # Execute with same model
         result = run_rlm(
-            query="Pregunta",
-            context="Contexto",
+            query="Question",
+            context="Context",
             root_model="gpt-5.3-codex",
-            sub_model="gpt-5.3-codex",  # Igual al root
+            sub_model="gpt-5.3-codex",  # Same as root
             base_url="http://localhost:8317/v1",
             api_key="test-key",
         )
 
-        # Verificar que NO se pasó other_backends
+        # Verify other_backends was NOT passed
         call_kwargs = mock_rlm_class.call_args.kwargs
         assert "other_backends" not in call_kwargs
         assert "other_backend_kwargs" not in call_kwargs
 
     @patch("rlm_bridge.RLM")
-    def test_sin_other_backends_cuando_sub_model_none(self, mock_rlm_class):
-        """Verifica que other_backends NO se configura cuando sub_model es None"""
+    def test_no_other_backends_when_sub_model_none(self, mock_rlm_class):
+        """Verifies other_backends is NOT configured when sub_model is None"""
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
-        mock_result.response = "Respuesta"
+        mock_result.response = "Response"
         mock_rlm_instance.completion.return_value = mock_result
         mock_rlm_class.return_value = mock_rlm_instance
 
         result = run_rlm(
-            query="Pregunta",
-            context="Contexto",
+            query="Question",
+            context="Context",
             root_model="gpt-5.3-codex",
             sub_model=None,
             base_url="http://localhost:8317/v1",
@@ -90,8 +90,8 @@ class TestRunRlmModelos:
         assert "other_backends" not in call_kwargs
 
     @patch("rlm_bridge.RLM")
-    def test_backend_kwargs_contiene_base_url(self, mock_rlm_class):
-        """Verifica que backend_kwargs incluye base_url para CLIProxyAPI"""
+    def test_backend_kwargs_contains_base_url(self, mock_rlm_class):
+        """Verifies backend_kwargs includes base_url for CLIProxyAPI"""
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
         mock_result.response = "OK"
@@ -113,8 +113,8 @@ class TestRunRlmModelos:
         assert call_kwargs["backend_kwargs"]["api_key"] == "my-key"
 
     @patch("rlm_bridge.RLM")
-    def test_max_iterations_es_20(self, mock_rlm_class):
-        """Verifica que max_iterations está configurado a 20 (reducido del default 30)"""
+    def test_max_iterations_is_20(self, mock_rlm_class):
+        """Verifies max_iterations is set to 20 (reduced from default 30)"""
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
         mock_result.response = "OK"
@@ -134,8 +134,8 @@ class TestRunRlmModelos:
         assert call_kwargs["max_iterations"] == 20
 
     @patch("rlm_bridge.RLM")
-    def test_max_depth_es_1(self, mock_rlm_class):
-        """Verifica que max_depth es 1 (único valor funcional según docs RLM)"""
+    def test_max_depth_is_1(self, mock_rlm_class):
+        """Verifies max_depth is 1 (only functional value per RLM docs)"""
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
         mock_result.response = "OK"
@@ -155,8 +155,8 @@ class TestRunRlmModelos:
         assert call_kwargs["max_depth"] == 1
 
     @patch("rlm_bridge.RLM")
-    def test_environment_es_local(self, mock_rlm_class):
-        """Verifica que environment es 'local' (REPL corre en Pi directamente)"""
+    def test_environment_is_local(self, mock_rlm_class):
+        """Verifies environment is 'local' (REPL runs on Pi directly)"""
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
         mock_result.response = "OK"
@@ -176,17 +176,17 @@ class TestRunRlmModelos:
         assert call_kwargs["environment"] == "local"
 
     @patch("rlm_bridge.RLM")
-    def test_resultado_incluye_modelos_usados(self, mock_rlm_class):
-        """Verifica que el resultado incluye qué modelos se usaron"""
+    def test_result_includes_models_used(self, mock_rlm_class):
+        """Verifies result includes which models were used"""
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
-        mock_result.response = "Análisis completado"
+        mock_result.response = "Analysis complete"
         mock_rlm_instance.completion.return_value = mock_result
         mock_rlm_class.return_value = mock_rlm_instance
 
         result = run_rlm(
-            query="Analiza",
-            context="Datos",
+            query="Analyze",
+            context="Data",
             root_model="gpt-5.3-codex",
             sub_model="gpt-5.1-codex-mini",
             base_url="http://localhost:8317/v1",

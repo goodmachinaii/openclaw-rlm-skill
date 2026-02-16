@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests para verificar comportamiento de fallback cuando el modelo principal falla
+Tests to verify fallback behavior when primary model fails
 """
 
 from pathlib import Path
@@ -14,11 +14,11 @@ from rlm_bridge import run_rlm
 
 
 class TestFallback:
-    """Tests para verificar fallback cuando modelo principal falla"""
+    """Tests to verify fallback when primary model fails"""
 
     @patch("rlm_bridge.RLM")
-    def test_rate_limit_retorna_mensaje_amigable(self, mock_rlm_class):
-        """Verifica que error 429 retorna mensaje amigable sin re-raise"""
+    def test_rate_limit_returns_friendly_message(self, mock_rlm_class):
+        """Verifies 429 error returns friendly message without re-raise"""
         mock_rlm_instance = MagicMock()
         mock_rlm_instance.completion.side_effect = Exception("Error 429: rate limit exceeded")
         mock_rlm_class.return_value = mock_rlm_instance
@@ -33,11 +33,11 @@ class TestFallback:
         )
 
         assert result["status"] == "rate_limited"
-        assert "cuota" in result["response"].lower()
+        assert "quota" in result["response"].lower()
 
     @patch("rlm_bridge.RLM")
-    def test_quota_exceeded_retorna_mensaje_amigable(self, mock_rlm_class):
-        """Verifica que 'quota exceeded' también se maneja como rate limit"""
+    def test_quota_exceeded_returns_friendly_message(self, mock_rlm_class):
+        """Verifies 'quota exceeded' is also handled as rate limit"""
         mock_rlm_instance = MagicMock()
         mock_rlm_instance.completion.side_effect = Exception("Quota exceeded for this month")
         mock_rlm_class.return_value = mock_rlm_instance
@@ -54,8 +54,8 @@ class TestFallback:
         assert result["status"] == "rate_limited"
 
     @patch("rlm_bridge.RLM")
-    def test_error_generico_hace_reraise(self, mock_rlm_class):
-        """Verifica que errores genéricos (no rate limit) hacen re-raise para fallback"""
+    def test_generic_error_raises_for_fallback(self, mock_rlm_class):
+        """Verifies generic errors (not rate limit) re-raise for fallback"""
         mock_rlm_instance = MagicMock()
         mock_rlm_instance.completion.side_effect = Exception("Connection timeout")
         mock_rlm_class.return_value = mock_rlm_instance
@@ -73,12 +73,12 @@ class TestFallback:
         assert "Connection timeout" in str(exc_info.value)
 
     @patch("rlm_bridge.RLM")
-    def test_fallback_se_intenta_tras_error_principal(self, mock_rlm_class):
+    def test_fallback_attempted_after_primary_error(self, mock_rlm_class):
         """
-        Verifica que cuando el modelo principal falla con error genérico,
-        main() intentaría el fallback (simulamos el flujo)
+        Verifies that when primary model fails with generic error,
+        main() would attempt fallback (simulating the flow)
         """
-        # Este test simula el comportamiento de main() sin ejecutarlo
+        # This test simulates main() behavior without executing it
         call_count = 0
         responses = []
 
@@ -88,19 +88,19 @@ class TestFallback:
             mock_instance = MagicMock()
 
             if call_count == 1:
-                # Primera llamada (principal) falla
+                # First call (primary) fails
                 mock_instance.completion.side_effect = Exception("Model unavailable")
             else:
-                # Segunda llamada (fallback) funciona
+                # Second call (fallback) works
                 mock_result = MagicMock()
-                mock_result.response = "Respuesta del fallback"
+                mock_result.response = "Fallback response"
                 mock_instance.completion.return_value = mock_result
 
             return mock_instance
 
         mock_rlm_class.side_effect = mock_rlm_init
 
-        # Primera llamada falla
+        # First call fails
         with pytest.raises(Exception):
             run_rlm(
                 query="Test",
@@ -111,7 +111,7 @@ class TestFallback:
                 api_key="key",
             )
 
-        # Segunda llamada (fallback) funciona
+        # Second call (fallback) works
         result = run_rlm(
             query="Test",
             context="Context",
@@ -121,15 +121,15 @@ class TestFallback:
             api_key="key",
         )
 
-        assert result["response"] == "Respuesta del fallback"
+        assert result["response"] == "Fallback response"
         assert result["status"] == "ok"
         assert call_count == 2
 
     @patch("rlm_bridge.RLM")
-    def test_fallback_usa_mismo_modelo_para_root_y_sub(self, mock_rlm_class):
+    def test_fallback_uses_same_model_for_root_and_sub(self, mock_rlm_class):
         """
-        Verifica que en fallback se usa el mismo modelo para root y sub
-        (según el plan: fallback_model se usa para ambos)
+        Verifies that fallback uses same model for root and sub
+        (per plan: fallback_model is used for both)
         """
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
@@ -137,50 +137,50 @@ class TestFallback:
         mock_rlm_instance.completion.return_value = mock_result
         mock_rlm_class.return_value = mock_rlm_instance
 
-        # Simular llamada de fallback (mismo modelo para root y sub)
+        # Simulate fallback call (same model for root and sub)
         result = run_rlm(
             query="Test",
             context="Context",
             root_model="gpt-5.2",
-            sub_model="gpt-5.2",  # Mismo que root
+            sub_model="gpt-5.2",  # Same as root
             base_url="http://localhost:8317/v1",
             api_key="key",
         )
 
-        # Verificar que NO se pasó other_backends (porque son iguales)
+        # Verify other_backends was NOT passed (because they're equal)
         call_kwargs = mock_rlm_class.call_args.kwargs
         assert "other_backends" not in call_kwargs
         assert result["model_used"] == "gpt-5.2"
 
 
 class TestMainFallbackIntegration:
-    """Tests de integración para el flujo completo de fallback en main()"""
+    """Integration tests for complete fallback flow in main()"""
 
     @patch("rlm_bridge.load_workspace")
     @patch("rlm_bridge.load_sessions")
     @patch("rlm_bridge.find_sessions_dir")
     @patch("rlm_bridge.run_rlm")
-    def test_main_intenta_fallback_tras_error(
+    def test_main_attempts_fallback_after_error(
         self, mock_run_rlm, mock_find_sessions, mock_load_sessions, mock_load_workspace
     ):
-        """Verifica que main() intenta fallback cuando run_rlm falla"""
+        """Verifies main() attempts fallback when run_rlm fails"""
         # Setup mocks
         mock_find_sessions.return_value = "/tmp/sessions"
         mock_load_workspace.return_value = "Workspace content"
         mock_load_sessions.return_value = "Session content with enough chars " * 10
 
-        # Primera llamada falla, segunda funciona
+        # First call fails, second works
         mock_run_rlm.side_effect = [
-            Exception("Principal falló"),
+            Exception("Primary failed"),
             {
-                "response": "Fallback funcionó",
+                "response": "Fallback worked",
                 "model_used": "gpt-5.2",
                 "sub_model_used": "gpt-5.2",
                 "status": "ok",
             }
         ]
 
-        # Importar y ejecutar main con args mockeados
+        # Import and execute main with mocked args
         from rlm_bridge import main
         import sys
         from io import StringIO
@@ -198,10 +198,10 @@ class TestMainFallbackIntegration:
 
         output = captured_output.getvalue()
 
-        # Verificar que run_rlm se llamó 2 veces
+        # Verify run_rlm was called 2 times
         assert mock_run_rlm.call_count == 2
 
-        # Verificar que la segunda llamada usó el modelo fallback
+        # Verify second call used fallback model
         second_call_kwargs = mock_run_rlm.call_args_list[1].kwargs
         assert second_call_kwargs["root_model"] == "gpt-5.2"
 

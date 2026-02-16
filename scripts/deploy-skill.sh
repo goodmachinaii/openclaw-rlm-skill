@@ -2,29 +2,29 @@
 set -euo pipefail
 
 # =============================================================================
-# Desplegar skill a OpenClaw workspace
+# Deploy skill to OpenClaw workspace
 # =============================================================================
 
-echo "Desplegando RLM skill a OpenClaw..."
+echo "Deploying RLM skill to OpenClaw..."
 
-# Directorio del proyecto
+# Project directory
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Directorio destino en OpenClaw
+# Destination directory in OpenClaw
 SKILL_DIR="$HOME/.openclaw/workspace/skills/rlm-engine"
 
-# Crear directorio si no existe
+# Create directory if it doesn't exist
 mkdir -p "$SKILL_DIR"
 
-# Copiar archivos del skill
+# Copy skill files
 cp "$SCRIPT_DIR/skill/SKILL.md" "$SKILL_DIR/"
 cp "$SCRIPT_DIR/src/rlm_bridge.py" "$SKILL_DIR/"
 
-echo "Skill desplegado en: $SKILL_DIR"
+echo "Skill deployed to: $SKILL_DIR"
 echo ""
-echo "Archivos copiados:"
+echo "Files copied:"
 ls -la "$SKILL_DIR"
 
 echo ""
-echo "Para activar el skill, reinicia OpenClaw:"
+echo "To activate the skill, restart OpenClaw:"
 echo "  openclaw gateway restart"

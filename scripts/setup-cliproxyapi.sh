@@ -2,52 +2,52 @@
 set -euo pipefail
 
 # =============================================================================
-# Compilar e instalar CLIProxyAPI desde source
-# Para ARM64 (Raspberry Pi 4) - NO hay binarios precompilados
+# Compile and install CLIProxyAPI from source
+# For ARM64 (Raspberry Pi 4) - NO precompiled binaries available
 # =============================================================================
 
-echo "CLIProxyAPI - Compilación desde source"
-echo "======================================="
+echo "CLIProxyAPI - Compilation from source"
+echo "======================================"
 
-# Verificar Go
+# Check Go
 if ! command -v go &>/dev/null; then
-    echo "Go no encontrado. Instalando..."
+    echo "Go not found. Installing..."
     sudo apt update && sudo apt install -y golang
 fi
 
 GO_VERSION=$(go version | cut -d' ' -f3)
 echo "Go version: $GO_VERSION"
 
-# Crear directorio temporal
+# Create temporary directory
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 
-# Clonar repositorio
+# Clone repository
 echo ""
-echo "Clonando CLIProxyAPI..."
+echo "Cloning CLIProxyAPI..."
 git clone --depth 1 https://github.com/router-for-me/CLIProxyAPI.git "$TMPDIR/cliproxyapi"
 
-# Compilar
+# Compile
 echo ""
-echo "Compilando para $(uname -m)..."
+echo "Compiling for $(uname -m)..."
 cd "$TMPDIR/cliproxyapi"
 mkdir -p "$HOME/.local/bin"
 go build -o "$HOME/.local/bin/cli-proxy-api" ./cmd/server
 
-# Verificar
+# Verify
 if [ -f "$HOME/.local/bin/cli-proxy-api" ]; then
     echo ""
-    echo "Compilación exitosa!"
-    echo "Binario: $HOME/.local/bin/cli-proxy-api"
+    echo "Compilation successful!"
+    echo "Binary: $HOME/.local/bin/cli-proxy-api"
     echo ""
-    echo "Para iniciar:"
+    echo "To start:"
     echo "  cli-proxy-api --config ~/.cli-proxy-api/config.yaml"
     echo ""
-    echo "Para instalar como servicio systemd:"
+    echo "To install as systemd service:"
     echo "  cp config/cliproxyapi.service ~/.config/systemd/user/"
     echo "  systemctl --user daemon-reload"
     echo "  systemctl --user enable --now cliproxyapi"
 else
-    echo "ERROR: Compilación falló"
+    echo "ERROR: Compilation failed"
     exit 1
 fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Tests básicos para rlm_bridge.py
-Verifica parse_jsonl_session() y load_sessions()
+Basic tests for rlm_bridge.py
+Verifies parse_jsonl_session() and load_sessions()
 """
 
 import json
@@ -10,18 +10,18 @@ from pathlib import Path
 
 import pytest
 
-# Importar funciones del bridge
+# Import functions from bridge
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from rlm_bridge import parse_jsonl_session, load_sessions
 
 
 class TestParseJsonlSession:
-    """Tests para parse_jsonl_session()"""
+    """Tests for parse_jsonl_session()"""
 
-    def test_convierte_jsonl_a_texto_legible(self, tmp_path):
-        """Verifica que JSONL se convierte a formato [role]: texto"""
-        # Crear archivo JSONL de prueba
+    def test_converts_jsonl_to_readable_text(self, tmp_path):
+        """Verifies JSONL is converted to [role]: text format"""
+        # Create test JSONL file
         jsonl_file = tmp_path / "session_001.jsonl"
         entries = [
             {
@@ -29,7 +29,7 @@ class TestParseJsonlSession:
                 "timestamp": "2026-01-15T10:00:00Z",
                 "message": {
                     "role": "user",
-                    "content": [{"type": "text", "text": "Hola, ¿cómo estás?"}]
+                    "content": [{"type": "text", "text": "Hello, how are you?"}]
                 }
             },
             {
@@ -37,7 +37,7 @@ class TestParseJsonlSession:
                 "timestamp": "2026-01-15T10:00:05Z",
                 "message": {
                     "role": "assistant",
-                    "content": [{"type": "text", "text": "¡Hola! Estoy bien, gracias."}]
+                    "content": [{"type": "text", "text": "Hi! I'm doing well, thanks."}]
                 }
             },
         ]
@@ -45,22 +45,22 @@ class TestParseJsonlSession:
             for entry in entries:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        # Parsear
+        # Parse
         result = parse_jsonl_session(jsonl_file)
 
-        # Verificar
-        assert "[user]: Hola, ¿cómo estás?" in result
-        assert "[assistant]: ¡Hola! Estoy bien, gracias." in result
+        # Verify
+        assert "[user]: Hello, how are you?" in result
+        assert "[assistant]: Hi! I'm doing well, thanks." in result
 
-    def test_ignora_tool_result(self, tmp_path):
-        """Verifica que toolResult no se incluye en el output"""
+    def test_ignores_tool_result(self, tmp_path):
+        """Verifies toolResult is not included in output"""
         jsonl_file = tmp_path / "session_002.jsonl"
         entries = [
             {
                 "type": "message",
                 "message": {
                     "role": "user",
-                    "content": [{"type": "text", "text": "Busca archivos"}]
+                    "content": [{"type": "text", "text": "Search for files"}]
                 }
             },
             {
@@ -74,7 +74,7 @@ class TestParseJsonlSession:
                 "type": "message",
                 "message": {
                     "role": "assistant",
-                    "content": [{"type": "text", "text": "Encontré 2 archivos."}]
+                    "content": [{"type": "text", "text": "Found 2 files."}]
                 }
             },
         ]
@@ -84,19 +84,19 @@ class TestParseJsonlSession:
 
         result = parse_jsonl_session(jsonl_file)
 
-        assert "[user]: Busca archivos" in result
-        assert "[assistant]: Encontré 2 archivos." in result
+        assert "[user]: Search for files" in result
+        assert "[assistant]: Found 2 files." in result
         assert "toolResult" not in result
         assert "file1.txt" not in result
 
-    def test_maneja_content_como_string(self, tmp_path):
-        """Verifica que content como string directo funciona"""
+    def test_handles_content_as_string(self, tmp_path):
+        """Verifies content as direct string works"""
         jsonl_file = tmp_path / "session_003.jsonl"
         entry = {
             "type": "message",
             "message": {
                 "role": "user",
-                "content": "Mensaje simple como string"
+                "content": "Simple message as string"
             }
         }
         with open(jsonl_file, "w", encoding="utf-8") as f:
@@ -104,10 +104,10 @@ class TestParseJsonlSession:
 
         result = parse_jsonl_session(jsonl_file)
 
-        assert "[user]: Mensaje simple como string" in result
+        assert "[user]: Simple message as string" in result
 
-    def test_archivo_vacio_retorna_string_vacio(self, tmp_path):
-        """Verifica que archivo vacío no causa error"""
+    def test_empty_file_returns_empty_string(self, tmp_path):
+        """Verifies empty file doesn't cause error"""
         jsonl_file = tmp_path / "empty.jsonl"
         jsonl_file.touch()
 
@@ -115,31 +115,31 @@ class TestParseJsonlSession:
 
         assert result == ""
 
-    def test_lineas_json_invalidas_se_ignoran(self, tmp_path):
-        """Verifica que JSON inválido se salta sin error"""
+    def test_invalid_json_lines_are_skipped(self, tmp_path):
+        """Verifies invalid JSON is skipped without error"""
         jsonl_file = tmp_path / "mixed.jsonl"
         with open(jsonl_file, "w", encoding="utf-8") as f:
-            f.write("esto no es json\n")
+            f.write("this is not json\n")
             f.write(json.dumps({
-                "message": {"role": "user", "content": [{"type": "text", "text": "válido"}]}
+                "message": {"role": "user", "content": [{"type": "text", "text": "valid"}]}
             }) + "\n")
-            f.write("{json incompleto\n")
+            f.write("{incomplete json\n")
 
         result = parse_jsonl_session(jsonl_file)
 
-        assert "[user]: válido" in result
-        assert "esto no es json" not in result
+        assert "[user]: valid" in result
+        assert "this is not json" not in result
 
 
 class TestLoadSessions:
-    """Tests para load_sessions()"""
+    """Tests for load_sessions()"""
 
-    def test_encuentra_archivos_jsonl(self, tmp_path):
-        """Verifica que load_sessions encuentra y carga archivos .jsonl"""
+    def test_finds_jsonl_files(self, tmp_path):
+        """Verifies load_sessions finds and loads .jsonl files"""
         sessions_dir = tmp_path / "sessions"
         sessions_dir.mkdir()
 
-        # Crear sesión JSONL
+        # Create JSONL session
         session_file = sessions_dir / "session_abc123.jsonl"
         entry = {
             "message": {"role": "user", "content": [{"type": "text", "text": "Test session"}]}
@@ -152,41 +152,41 @@ class TestLoadSessions:
         assert "SESSION:session_abc123" in result
         assert "[user]: Test session" in result
 
-    def test_respeta_max_sessions(self, tmp_path):
-        """Verifica que max_sessions limita la cantidad de sesiones cargadas"""
+    def test_respects_max_sessions(self, tmp_path):
+        """Verifies max_sessions limits loaded sessions count"""
         sessions_dir = tmp_path / "sessions"
         sessions_dir.mkdir()
 
-        # Crear 5 sesiones
+        # Create 5 sessions
         for i in range(5):
             session_file = sessions_dir / f"session_{i:03d}.jsonl"
-            entry = {"message": {"role": "user", "content": f"Sesión {i}"}}
+            entry = {"message": {"role": "user", "content": f"Session {i}"}}
             with open(session_file, "w", encoding="utf-8") as f:
                 f.write(json.dumps(entry) + "\n")
 
         result = load_sessions(str(sessions_dir), max_sessions=2)
 
-        # Solo debe haber 2 sesiones (las más recientes por mtime)
+        # Should only have 2 sessions (most recent by mtime)
         session_count = result.count("SESSION:")
         assert session_count == 2
 
-    def test_directorio_inexistente_retorna_mensaje(self, tmp_path):
-        """Verifica que directorio inexistente retorna mensaje apropiado"""
-        result = load_sessions(str(tmp_path / "no_existe"))
+    def test_nonexistent_directory_returns_message(self, tmp_path):
+        """Verifies nonexistent directory returns appropriate message"""
+        result = load_sessions(str(tmp_path / "does_not_exist"))
 
-        assert "No hay sesiones disponibles" in result
+        assert "No sessions available" in result
 
-    def test_ignora_sessions_json_index(self, tmp_path):
-        """Verifica que sessions.json (índice) no se procesa como sesión"""
+    def test_ignores_sessions_json_index(self, tmp_path):
+        """Verifies sessions.json (index) is not processed as session"""
         sessions_dir = tmp_path / "sessions"
         sessions_dir.mkdir()
 
-        # Crear índice (no es sesión)
+        # Create index (not a session)
         index_file = sessions_dir / "sessions.json"
         with open(index_file, "w") as f:
             json.dump({"sessions": []}, f)
 
-        # Crear sesión real
+        # Create real session
         session_file = sessions_dir / "real_session.jsonl"
         entry = {"message": {"role": "user", "content": "Real"}}
         with open(session_file, "w", encoding="utf-8") as f:
@@ -197,17 +197,17 @@ class TestLoadSessions:
         assert "SESSION:real_session" in result
         assert "SESSION:sessions" not in result
 
-    def test_sesiones_muy_cortas_se_ignoran(self, tmp_path):
-        """Verifica que sesiones con menos de 50 chars se ignoran"""
+    def test_very_short_sessions_are_ignored(self, tmp_path):
+        """Verifies sessions with less than 50 chars are ignored"""
         sessions_dir = tmp_path / "sessions"
         sessions_dir.mkdir()
 
-        # Sesión corta (será ignorada)
+        # Short session (will be ignored)
         short = sessions_dir / "short.jsonl"
         with open(short, "w") as f:
             f.write('{"message":{"role":"user","content":"Hi"}}\n')
 
-        # Sesión larga (será incluida)
+        # Long session (will be included)
         long = sessions_dir / "long.jsonl"
         entry = {"message": {"role": "user", "content": "x" * 100}}
         with open(long, "w", encoding="utf-8") as f:
@@ -216,7 +216,7 @@ class TestLoadSessions:
         result = load_sessions(str(sessions_dir))
 
         assert "SESSION:long" in result
-        # short puede o no aparecer dependiendo de cómo se cuenta el formato
+        # short may or may not appear depending on how format counts
 
 
 if __name__ == "__main__":

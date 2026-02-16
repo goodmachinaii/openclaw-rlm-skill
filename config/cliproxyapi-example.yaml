@@ -1,17 +1,17 @@
-# CLIProxyAPI — Configuración para OpenClaw RLM Skill
-# Puerto: 8317 (default de CLIProxyAPI, NO cambiar a menos que haya conflicto)
+# CLIProxyAPI — Configuration for OpenClaw RLM Skill
+# Port: 8317 (CLIProxyAPI default, DO NOT change unless there's a conflict)
 # Docs: https://github.com/router-for-me/CLIProxyAPI
 
 port: 8317
 host: "127.0.0.1"
-secret-key: "cambiar-esto-en-produccion"
+secret-key: "change-this-in-production"
 
-# Proveedores habilitados
-# OAuth se configura via interfaz web: http://localhost:8317/management.html
+# Enabled providers
+# OAuth is configured via web interface: http://localhost:8317/management.html
 providers:
   openai-codex:
     enabled: true
 
-# Logging (opcional)
+# Logging (optional)
 # log-level: "info"
 # log-file: "/tmp/cliproxyapi.log"
