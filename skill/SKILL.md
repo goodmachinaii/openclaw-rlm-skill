@@ -43,9 +43,9 @@ Use this skill ONLY when the question requires something memory_search CANNOT do
 
 ## When NOT to use (use memory_search instead)
 
-- **Find specific data:** "What was the WiFi password I mentioned?"
+- **Find specific data:** "What was the API endpoint I mentioned yesterday?"
   → memory_search finds it in milliseconds
-- **Remember a simple fact:** "Do you remember the restaurant name I recommended?"
+- **Remember a simple fact:** "What was the name of the library we discussed?"
   → memory_search is enough
 - **Current session context** → you already have it in context, no tool needed
 - **Greetings, casual chat, real-time tasks** → don't require history
@@ -128,8 +128,8 @@ Usa este skill SOLO cuando la pregunta requiera algo que memory_search NO puede 
 
 ## Cuándo NO usar (usa memory_search en su lugar)
 
-- **Buscar un dato puntual:** "¿Cuál era la contraseña del WiFi que mencioné?"
-- **Recordar un hecho simple:** "¿Recuerdas el nombre del restaurante que recomendé?"
+- **Buscar un dato puntual:** "¿Cuál era el endpoint de la API que mencioné ayer?"
+- **Recordar un hecho simple:** "¿Cómo se llamaba la librería que discutimos?"
 - **Contexto de la sesión actual** → ya lo tienes en el contexto
 - **Saludos, chat casual, tareas en tiempo real** → no requieren historial
 

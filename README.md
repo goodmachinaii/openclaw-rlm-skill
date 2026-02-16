@@ -82,8 +82,8 @@ The skill activates automatically when OpenClaw detects questions requiring deep
 
 ### Questions that DON'T need rlm-engine (use memory_search)
 
-- "What was the WiFi password?"
-- "Do you remember the restaurant name?"
+- "What was the API endpoint I mentioned?"
+- "What was the command to restart the server?"
 
 ## Models
 
@@ -194,5 +194,5 @@ El skill se activa automáticamente cuando OpenClaw detecta preguntas que requie
 
 ### Preguntas que NO necesitan rlm-engine (usa memory_search)
 
-- "¿Cuál era la contraseña del WiFi?"
-- "¿Recuerdas el nombre del restaurante?"
+- "¿Cuál era el endpoint de la API que mencioné?"
+- "¿Cuál era el comando para reiniciar el servidor?"
