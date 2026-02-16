@@ -197,9 +197,9 @@ openclaw-rlm-skill/
 ├── skill/
 │   └── SKILL.md            # Definición del skill para OpenClaw
 ├── tests/
-│   ├── test_basico.py      # Tests de parsing JSONL
-│   ├── test_modelos.py     # Tests de configuración de modelos
-│   └── test_fallback.py    # Tests de comportamiento fallback
+│   ├── test_jsonl_parsing.py  # Tests de parsing JSONL
+│   ├── test_model_config.py   # Tests de configuración de modelos
+│   └── test_fallback.py       # Tests de comportamiento fallback
 ├── scripts/
 │   ├── setup-cliproxyapi.sh
 │   ├── setup-rlm.sh
@@ -221,7 +221,7 @@ openclaw-rlm-skill/
 uv run pytest tests/ -v
 
 # Ejecutar archivo de test específico
-uv run pytest tests/test_basico.py -v
+uv run pytest tests/test_jsonl_parsing.py -v
 ```
 
 Los tests usan mocks—no requieren llamadas API.
