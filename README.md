@@ -1,30 +1,120 @@
 # OpenClaw RLM Skill
 
-OpenClaw skill that integrates [RLM](https://github.com/alexzhang13/rlm) (Recursive Language Models) for programmatic reasoning over complete conversation history.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![OpenClaw](https://img.shields.io/badge/OpenClaw-skill-purple.svg)](https://github.com/openclaw)
+[![Platform](https://img.shields.io/badge/platform-ARM64%20%7C%20x86__64-lightgrey.svg)]()
 
-## What it does
+> **Deep programmatic reasoning over conversation history for OpenClaw.**
 
-This skill complements OpenClaw's `memory_search`. While `memory_search` quickly finds snippets, `rlm-engine` can:
+[Español](README.es.md)
 
-- Cross-reference information across multiple sessions
-- Analyze patterns and trends in history
-- Execute Python code to reason over large volumes of data
-- Answer questions that require reading complete sessions
+---
+
+## Why This Exists
+
+OpenClaw's built-in `memory_search` is fast (milliseconds) but limited to returning short snippets. When you need to **reason** over your conversation history—cross-referencing sessions, finding patterns, or analyzing trends—you need something more powerful.
+
+This skill integrates [RLM (Recursive Language Models)](https://github.com/alexzhang13/rlm) to execute Python code that reasons over your complete conversation history, enabling complex queries that simple search cannot answer.
+
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           User (Telegram)                               │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    OpenClaw Gateway (port 18789)                        │
+│  • Detects question requires deep analysis                              │
+│  • Reads skill/SKILL.md for invocation instructions                     │
+│  • Sends "Analyzing your history..." to user                            │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         rlm_bridge.py                                   │
+│  • Auto-detects OpenClaw paths (~/.openclaw/agents/*/sessions/)         │
+│  • Parses JSONL sessions (extracts user + assistant, ignores tools)     │
+│  • Loads workspace: MEMORY.md, SOUL.md, daily notes                     │
+│  • Enforces memory limits: 30 sessions, 2M chars max                    │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              RLM                                        │
+│  • Root LM decides analysis strategy (1 call)                           │
+│  • Sub-LMs navigate context (2-7 calls, 4x cheaper)                     │
+│  • Executes Python code in local REPL                                   │
+│  • Automatic fallback if primary model fails                            │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    CLIProxyAPI (port 8317)                              │
+│  • Converts API calls to OAuth (uses your ChatGPT subscription)         │
+│  • $0 additional cost                                                   │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │
+                                  ▼
+                          OpenAI servers
+```
+
+## When to Use
+
+| Scenario | Tool | Response Time |
+|----------|------|---------------|
+| Find a specific fact mentioned once | `memory_search` | ~100ms |
+| Cross-reference multiple sessions | **rlm-engine** | 15-45s |
+| Analyze patterns or trends | **rlm-engine** | 15-45s |
+| Count occurrences across history | **rlm-engine** | 15-45s |
+| Summarize everything on a topic | **rlm-engine** | 15-45s |
+
+**Examples:**
+
+```
+✓ rlm-engine: "Compare what we discussed about the API last week vs today"
+✓ rlm-engine: "What are the most frequent topics of the last month?"
+✓ rlm-engine: "Find all pending decisions about infrastructure"
+
+✗ memory_search: "What was the API endpoint I mentioned?"
+✗ memory_search: "What was the command to restart the server?"
+```
 
 ## Requirements
 
-| Component | Version |
-|-----------|---------|
-| Raspberry Pi 4 | 8GB RAM recommended |
-| OS | Debian 13 (Trixie) ARM64 |
+| Component | Requirement |
+|-----------|-------------|
+| Hardware | Raspberry Pi 4 (8GB RAM) or equivalent |
+| OS | Debian 13+ ARM64 / any Linux x86_64 |
 | OpenClaw | Installed and running |
-| Node.js | >= 22 |
-| Python | >= 3.11 |
-| ChatGPT subscription | Pro or Max (for OAuth) |
+| Python | 3.11+ |
+| Node.js | 22+ |
+| ChatGPT | Pro or Max subscription (for OAuth) |
 
-## Installation
+## Quick Start
 
-### 1. Clone the repository
+```bash
+# Clone and install
+git clone https://github.com/angelgalvisc/openclaw-rlm-skill.git
+cd openclaw-rlm-skill
+./install.sh
+
+# Start CLIProxyAPI and authenticate
+cli-proxy-api --config ~/.cli-proxy-api/config.yaml
+# Open http://localhost:8317/management.html → login with ChatGPT
+
+# Restart OpenClaw
+openclaw gateway restart
+```
+
+Test from Telegram:
+> "What have we talked about this week?"
+
+## Installation (Detailed)
+
+### 1. Clone Repository
 
 ```bash
 cd ~
@@ -32,167 +122,171 @@ git clone https://github.com/angelgalvisc/openclaw-rlm-skill.git
 cd openclaw-rlm-skill
 ```
 
-### 2. Run automatic installation
+### 2. Run Installer
 
 ```bash
 chmod +x install.sh
 ./install.sh
 ```
 
-This will:
-- Install Python and uv if not present
-- Install RLM
+The installer will:
+- Install Python 3.11+ and uv (if missing)
+- Install RLM library
 - Compile CLIProxyAPI from source (for ARM64)
-- Deploy the skill to OpenClaw
+- Deploy skill to `~/.openclaw/workspace/skills/rlm-engine/`
 
-### 3. Configure CLIProxyAPI
+### 3. Configure OAuth
 
 ```bash
-# Start CLIProxyAPI
+# Start proxy
 cli-proxy-api --config ~/.cli-proxy-api/config.yaml
+
+# Open browser and authenticate
+open http://localhost:8317/management.html
 ```
 
-### 4. OAuth login
-
-Open in browser: http://localhost:8317/management.html
-
-Authenticate with your ChatGPT account.
-
-### 5. Restart OpenClaw
+### 4. Restart OpenClaw
 
 ```bash
 openclaw gateway restart
 ```
 
-### 6. Test
+## Configuration
 
-From Telegram:
-> "What have we talked about this week?"
+### CLI Options
 
-## Usage
+```bash
+uv run python src/rlm_bridge.py \
+  --query "Your question" \
+  --root-model gpt-5.3-codex \      # Main reasoning model
+  --sub-model gpt-5.1-codex-mini \  # Context navigation (4x cheaper)
+  --fallback-model gpt-5.2 \        # Used if primary fails
+  --max-sessions 30 \               # Limit sessions loaded
+  --verbose \                       # Detailed output
+  --log-dir /tmp/rlm-logs           # Save execution logs
+```
 
-The skill activates automatically when OpenClaw detects questions requiring deep history analysis.
+### Memory Limits
 
-### Examples of questions that trigger rlm-engine
+| Resource | Default | Purpose |
+|----------|---------|---------|
+| Sessions | 30 | Prevent timeout |
+| Total chars | 2M | Safe for 8GB RAM (~500K tokens) |
+| Daily notes | 200K chars | Cap for memory/*.md |
+| Workspace files | 50K each | Skip oversized files |
 
-- "Compare what we discussed about project X last week with today"
-- "What are the most frequent topics of the last month?"
-- "Find all pending decisions about infrastructure"
-- "Summarize EVERYTHING we've worked on in the migration project"
+### Models
 
-### Questions that DON'T need rlm-engine (use memory_search)
+| Role | Default Model | Calls/Query | Notes |
+|------|---------------|-------------|-------|
+| Root LM | gpt-5.3-codex | 1 | Main reasoning |
+| Sub-LMs | gpt-5.1-codex-mini | 2-7 | 4x more quota efficient |
+| Fallback | gpt-5.2 | varies | Automatic on failure |
 
-- "What was the API endpoint I mentioned?"
-- "What was the command to restart the server?"
-
-## Models
-
-| Role | Model | Description |
-|------|-------|-------------|
-| Root LM | gpt-5.3-codex | Main reasoning (1 call/query) |
-| Sub-LMs | gpt-5.1-codex-mini | Context navigation (2-7 calls, 4x more efficient) |
-| Fallback | gpt-5.2 | If primary fails |
-
-## Project structure
+## Project Structure
 
 ```
 openclaw-rlm-skill/
-├── src/rlm_bridge.py      # Main RLM ↔ OpenClaw bridge
-├── skill/SKILL.md         # Skill definition
-├── tests/                 # Unit tests
-├── scripts/               # Installation scripts
-├── config/                # Configuration files
-└── docs/                  # Additional documentation
+├── src/
+│   └── rlm_bridge.py       # Main bridge (382 lines)
+│                           # - find_sessions_dir(): auto-detect paths
+│                           # - parse_jsonl_session(): JSONL → text
+│                           # - load_workspace(): MEMORY.md, SOUL.md, etc.
+│                           # - load_sessions(): up to 30 sessions
+│                           # - run_rlm(): execute with fallback
+├── skill/
+│   └── SKILL.md            # OpenClaw skill definition
+├── tests/
+│   ├── test_basico.py      # JSONL parsing tests
+│   ├── test_modelos.py     # Model configuration tests
+│   └── test_fallback.py    # Fallback behavior tests
+├── scripts/
+│   ├── setup-cliproxyapi.sh
+│   ├── setup-rlm.sh
+│   └── deploy-skill.sh
+├── config/
+│   ├── cliproxyapi-example.yaml
+│   └── cliproxyapi.service  # systemd unit
+├── docs/
+│   ├── ARCHITECTURE.md
+│   └── TROUBLESHOOTING.md
+├── install.sh              # One-command installer
+└── pyproject.toml
 ```
 
-## Tests
+## Testing
 
 ```bash
+# Run all tests
 uv run pytest tests/ -v
+
+# Run specific test file
+uv run pytest tests/test_basico.py -v
+```
+
+Tests use mocks—no API calls required.
+
+## Debugging
+
+### Enable Verbose Output
+
+```bash
+uv run python src/rlm_bridge.py --query "..." --verbose
+```
+
+### Save Execution Logs
+
+```bash
+uv run python src/rlm_bridge.py --query "..." --log-dir /tmp/rlm-logs
+```
+
+Logs are saved as `.jsonl` and can be visualized with RLM's built-in visualizer:
+
+```bash
+cd ~/rlm/visualizer && npm run dev
+# Open http://localhost:3001
+```
+
+### View CLIProxyAPI Logs
+
+```bash
+journalctl --user -u cliproxyapi -f
 ```
 
 ## Troubleshooting
 
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for common issues.
+| Issue | Solution |
+|-------|----------|
+| Rate limit (429) | Wait a few minutes or use `memory_search` |
+| OAuth expired (401) | Re-authenticate at http://localhost:8317/management.html |
+| No sessions found | Check path: `ls ~/.openclaw/agents/*/sessions/*.jsonl` |
+| Out of memory | Reduce `--max-sessions 15` |
+| CLIProxyAPI won't compile | See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for alternatives |
+
+Full troubleshooting guide: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
+## Security Considerations
+
+- **OAuth tokens** are stored by CLIProxyAPI in `~/.cli-proxy-api/`
+- **API keys** for CLIProxyAPI are placeholder strings (not real secrets)
+- **Session data** stays local—only queries are sent to OpenAI
+- **No telemetry** or external data collection
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Run tests (`uv run pytest tests/ -v`)
+4. Commit changes (`git commit -m 'Add amazing feature'`)
+5. Push to branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
 ## License
 
-MIT
+MIT License. See [LICENSE](LICENSE) for details.
 
----
+## Acknowledgments
 
-# Español
-
-## Qué hace
-
-Este skill complementa `memory_search` de OpenClaw. Mientras `memory_search` busca snippets rápidamente, `rlm-engine` puede:
-
-- Cruzar información entre múltiples sesiones
-- Analizar patrones y tendencias en el historial
-- Ejecutar código Python para razonar sobre grandes volúmenes de datos
-- Responder preguntas que requieren leer sesiones completas
-
-## Requisitos
-
-| Componente | Versión |
-|------------|---------|
-| Raspberry Pi 4 | 8GB RAM recomendado |
-| OS | Debian 13 (Trixie) ARM64 |
-| OpenClaw | Instalado y funcionando |
-| Node.js | >= 22 |
-| Python | >= 3.11 |
-| Suscripción ChatGPT | Pro o Max (para OAuth) |
-
-## Instalación
-
-### 1. Clonar el repositorio
-
-```bash
-cd ~
-git clone https://github.com/angelgalvisc/openclaw-rlm-skill.git
-cd openclaw-rlm-skill
-```
-
-### 2. Ejecutar instalación automática
-
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-### 3. Configurar CLIProxyAPI
-
-```bash
-cli-proxy-api --config ~/.cli-proxy-api/config.yaml
-```
-
-### 4. OAuth login
-
-Abrir en navegador: http://localhost:8317/management.html
-
-### 5. Reiniciar OpenClaw
-
-```bash
-openclaw gateway restart
-```
-
-### 6. Probar
-
-Desde Telegram:
-> "¿De qué hemos hablado esta semana?"
-
-## Uso
-
-El skill se activa automáticamente cuando OpenClaw detecta preguntas que requieren análisis profundo del historial.
-
-### Ejemplos de preguntas que activan rlm-engine
-
-- "Compara lo que discutimos sobre el proyecto X la semana pasada con hoy"
-- "¿Cuáles son los temas más frecuentes del último mes?"
-- "Encuentra todas las decisiones pendientes sobre infraestructura"
-- "Resume TODO lo que hemos trabajado en el proyecto de migración"
-
-### Preguntas que NO necesitan rlm-engine (usa memory_search)
-
-- "¿Cuál era el endpoint de la API que mencioné?"
-- "¿Cuál era el comando para reiniciar el servidor?"
+- [RLM](https://github.com/alexzhang13/rlm) by Alex Zhang
+- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) for OAuth proxy
+- [OpenClaw](https://github.com/openclaw) ecosystem
