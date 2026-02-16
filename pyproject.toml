@@ -1,0 +1,27 @@
+[project]
+name = "openclaw-rlm-skill"
+version = "3.1.0"
+description = "OpenClaw skill que integra RLM para razonamiento programático sobre historial ilimitado"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "rlm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

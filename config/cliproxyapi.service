@@ -1,0 +1,27 @@
+# CLIProxyAPI — Servicio systemd (user)
+#
+# Instalación:
+#   mkdir -p ~/.config/systemd/user
+#   cp cliproxyapi.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now cliproxyapi
+#
+# Verificar estado:
+#   systemctl --user status cliproxyapi
+#
+# Ver logs:
+#   journalctl --user -u cliproxyapi -f
+
+[Unit]
+Description=CLIProxyAPI — Proxy OAuth→API para RLM
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/cli-proxy-api --config %h/.cli-proxy-api/config.yaml
+Restart=always
+RestartSec=10
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
