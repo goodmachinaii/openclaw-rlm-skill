@@ -47,6 +47,18 @@ logs/
 config/cliproxyapi.yaml
 !config/cliproxyapi-example.yaml
 
+# Secrets - NUNCA versionar archivos con API keys
+.env
+.env.*
+!.env.example
+config/moonshot.env
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
 # Test artifacts
 .pytest_cache/
 .coverage
