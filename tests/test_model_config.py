@@ -27,13 +27,13 @@ class TestRunRlmModels:
         mock_rlm_instance.completion.return_value = mock_result
         mock_rlm_class.return_value = mock_rlm_instance
 
-        # Execute with different models
+        # Execute with different models (Kimi)
         result = run_rlm(
             query="What did we do yesterday?",
             context="Test context",
-            root_model="gpt-5.3-codex",
-            sub_model="gpt-5.1-codex-mini",  # Different from root
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-thinking",
+            sub_model="kimi-k2.5",  # Different from root
+            base_url="https://api.moonshot.ai/v1",
             api_key="test-key",
         )
 
@@ -42,7 +42,7 @@ class TestRunRlmModels:
         assert "other_backends" in call_kwargs
         assert call_kwargs["other_backends"] == ["openai"]
         assert "other_backend_kwargs" in call_kwargs
-        assert call_kwargs["other_backend_kwargs"][0]["model_name"] == "gpt-5.1-codex-mini"
+        assert call_kwargs["other_backend_kwargs"][0]["model_name"] == "kimi-k2.5"
 
     @patch("rlm_bridge.RLM")
     def test_no_other_backends_when_models_same(self, mock_rlm_class):
@@ -57,9 +57,9 @@ class TestRunRlmModels:
         result = run_rlm(
             query="Question",
             context="Context",
-            root_model="gpt-5.3-codex",
-            sub_model="gpt-5.3-codex",  # Same as root
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-thinking",
+            sub_model="kimi-k2-thinking",  # Same as root
+            base_url="https://api.moonshot.ai/v1",
             api_key="test-key",
         )
 
@@ -80,9 +80,9 @@ class TestRunRlmModels:
         result = run_rlm(
             query="Question",
             context="Context",
-            root_model="gpt-5.3-codex",
+            root_model="kimi-k2-thinking",
             sub_model=None,
-            base_url="http://localhost:8317/v1",
+            base_url="https://api.moonshot.ai/v1",
             api_key="test-key",
         )
 
@@ -91,19 +91,19 @@ class TestRunRlmModels:
 
     @patch("rlm_bridge.RLM")
     def test_backend_kwargs_contains_base_url(self, mock_rlm_class):
-        """Verifies backend_kwargs includes base_url for CLIProxyAPI"""
+        """Verifies backend_kwargs includes base_url for Moonshot API"""
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
         mock_result.response = "OK"
         mock_rlm_instance.completion.return_value = mock_result
         mock_rlm_class.return_value = mock_rlm_instance
 
-        custom_url = "http://192.168.1.100:8317/v1"
+        custom_url = "https://api.moonshot.cn/v1"
         result = run_rlm(
             query="Test",
             context="Context",
-            root_model="gpt-5.3-codex",
-            sub_model="gpt-5.1-codex-mini",
+            root_model="kimi-k2-thinking",
+            sub_model="kimi-k2.5",
             base_url=custom_url,
             api_key="my-key",
         )
@@ -124,9 +124,9 @@ class TestRunRlmModels:
         run_rlm(
             query="Test",
             context="Context",
-            root_model="gpt-5.3-codex",
-            sub_model="gpt-5.1-codex-mini",
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-thinking",
+            sub_model="kimi-k2.5",
+            base_url="https://api.moonshot.ai/v1",
             api_key="key",
         )
 
@@ -145,9 +145,9 @@ class TestRunRlmModels:
         run_rlm(
             query="Test",
             context="Context",
-            root_model="gpt-5.3-codex",
-            sub_model="gpt-5.1-codex-mini",
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-thinking",
+            sub_model="kimi-k2.5",
+            base_url="https://api.moonshot.ai/v1",
             api_key="key",
         )
 
@@ -156,7 +156,7 @@ class TestRunRlmModels:
 
     @patch("rlm_bridge.RLM")
     def test_environment_is_local(self, mock_rlm_class):
-        """Verifies environment is 'local' (REPL runs on Pi directly)"""
+        """Verifies environment is 'local' (REPL runs locally)"""
         mock_rlm_instance = MagicMock()
         mock_result = MagicMock()
         mock_result.response = "OK"
@@ -166,9 +166,9 @@ class TestRunRlmModels:
         run_rlm(
             query="Test",
             context="Context",
-            root_model="gpt-5.3-codex",
-            sub_model="gpt-5.1-codex-mini",
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-thinking",
+            sub_model="kimi-k2.5",
+            base_url="https://api.moonshot.ai/v1",
             api_key="key",
         )
 
@@ -187,14 +187,14 @@ class TestRunRlmModels:
         result = run_rlm(
             query="Analyze",
             context="Data",
-            root_model="gpt-5.3-codex",
-            sub_model="gpt-5.1-codex-mini",
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-thinking",
+            sub_model="kimi-k2.5",
+            base_url="https://api.moonshot.ai/v1",
             api_key="key",
         )
 
-        assert result["model_used"] == "gpt-5.3-codex"
-        assert result["sub_model_used"] == "gpt-5.1-codex-mini"
+        assert result["model_used"] == "kimi-k2-thinking"
+        assert result["sub_model_used"] == "kimi-k2.5"
         assert result["status"] == "ok"
 
 

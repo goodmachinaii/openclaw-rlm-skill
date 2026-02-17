@@ -26,14 +26,14 @@ class TestFallback:
         result = run_rlm(
             query="Test",
             context="Context",
-            root_model="gpt-5.3-codex",
-            sub_model="gpt-5.1-codex-mini",
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-thinking",
+            sub_model="kimi-k2.5",
+            base_url="https://api.moonshot.ai/v1",
             api_key="key",
         )
 
         assert result["status"] == "rate_limited"
-        assert "quota" in result["response"].lower()
+        assert "rate limit" in result["response"].lower() or "kimi" in result["response"].lower()
 
     @patch("rlm_bridge.RLM")
     def test_quota_exceeded_returns_friendly_message(self, mock_rlm_class):
@@ -45,9 +45,9 @@ class TestFallback:
         result = run_rlm(
             query="Test",
             context="Context",
-            root_model="gpt-5.3-codex",
-            sub_model="gpt-5.1-codex-mini",
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-thinking",
+            sub_model="kimi-k2.5",
+            base_url="https://api.moonshot.ai/v1",
             api_key="key",
         )
 
@@ -64,9 +64,9 @@ class TestFallback:
             run_rlm(
                 query="Test",
                 context="Context",
-                root_model="gpt-5.3-codex",
-                sub_model="gpt-5.1-codex-mini",
-                base_url="http://localhost:8317/v1",
+                root_model="kimi-k2-thinking",
+                sub_model="kimi-k2.5",
+                base_url="https://api.moonshot.ai/v1",
                 api_key="key",
             )
 
@@ -105,9 +105,9 @@ class TestFallback:
             run_rlm(
                 query="Test",
                 context="Context",
-                root_model="gpt-5.3-codex",
-                sub_model="gpt-5.1-codex-mini",
-                base_url="http://localhost:8317/v1",
+                root_model="kimi-k2-thinking",
+                sub_model="kimi-k2.5",
+                base_url="https://api.moonshot.ai/v1",
                 api_key="key",
             )
 
@@ -115,9 +115,9 @@ class TestFallback:
         result = run_rlm(
             query="Test",
             context="Context",
-            root_model="gpt-5.2",  # Fallback model
-            sub_model="gpt-5.2",
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-turbo",  # Fallback model
+            sub_model="kimi-k2-turbo",
+            base_url="https://api.moonshot.ai/v1",
             api_key="key",
         )
 
@@ -141,16 +141,16 @@ class TestFallback:
         result = run_rlm(
             query="Test",
             context="Context",
-            root_model="gpt-5.2",
-            sub_model="gpt-5.2",  # Same as root
-            base_url="http://localhost:8317/v1",
+            root_model="kimi-k2-turbo",
+            sub_model="kimi-k2-turbo",  # Same as root
+            base_url="https://api.moonshot.ai/v1",
             api_key="key",
         )
 
         # Verify other_backends was NOT passed (because they're equal)
         call_kwargs = mock_rlm_class.call_args.kwargs
         assert "other_backends" not in call_kwargs
-        assert result["model_used"] == "gpt-5.2"
+        assert result["model_used"] == "kimi-k2-turbo"
 
 
 class TestMainFallbackIntegration:
@@ -174,8 +174,8 @@ class TestMainFallbackIntegration:
             Exception("Primary failed"),
             {
                 "response": "Fallback worked",
-                "model_used": "gpt-5.2",
-                "sub_model_used": "gpt-5.2",
+                "model_used": "kimi-k2-turbo",
+                "sub_model_used": "kimi-k2-turbo",
                 "status": "ok",
             }
         ]
@@ -189,6 +189,7 @@ class TestMainFallbackIntegration:
         test_args = [
             "rlm_bridge.py",
             "--query", "Test query",
+            "--api-key", "test-key",
         ]
 
         captured_output = StringIO()
@@ -203,7 +204,7 @@ class TestMainFallbackIntegration:
 
         # Verify second call used fallback model
         second_call_kwargs = mock_run_rlm.call_args_list[1].kwargs
-        assert second_call_kwargs["root_model"] == "gpt-5.2"
+        assert second_call_kwargs["root_model"] == "kimi-k2-turbo"
 
 
 if __name__ == "__main__":

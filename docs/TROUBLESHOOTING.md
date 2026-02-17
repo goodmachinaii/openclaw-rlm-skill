@@ -2,52 +2,48 @@
 
 ## Common issues
 
+### API key not set
+
+**Symptom:** Error "MOONSHOT_API_KEY environment variable not set"
+
+**Cause:** The API key is not configured.
+
+**Solution:**
+```bash
+# Set for current session
+export MOONSHOT_API_KEY="sk-your-key-here"
+
+# Or add to ~/.bashrc for persistence
+echo 'export MOONSHOT_API_KEY="sk-your-key-here"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Get your key at: https://platform.moonshot.ai/
+
 ### Rate limits (429)
 
-**Symptom:** Message "Your ChatGPT quota is reached"
+**Symptom:** Message "Kimi API rate limit reached"
 
-**Cause:** You've exceeded your ChatGPT subscription request limit.
+**Cause:** You've exceeded the Moonshot API rate limit.
 
 **Solution:**
 1. Wait a few minutes and try again
-2. Use `memory_search` for simple questions (doesn't consume RLM quota)
-3. Consider using the skill less during high-usage periods
+2. Use `memory_search` for simple questions (doesn't use RLM)
+3. Check your usage at https://platform.moonshot.ai/
 
-### CLIProxyAPI doesn't compile on ARM64
+### Invalid API key (401)
 
-**Symptom:** Error when running `go build`
+**Symptom:** Authentication error on API calls
 
-**Cause:** Go dependency issues on ARM64.
-
-**Solutions:**
-
-1. Verify Go version:
-   ```bash
-   go version
-   # Should be >= 1.20
-   ```
-
-2. Update Go:
-   ```bash
-   sudo apt update && sudo apt install -y golang
-   ```
-
-3. **Alternative: 9Router (JavaScript)**
-   If Go doesn't work, you can use 9Router which runs on Node.js:
-   https://github.com/mqa8668/9router-ha
-
-### OAuth token expired
-
-**Symptom:** 401 error on requests
-
-**Cause:** OAuth token has expired.
+**Cause:** API key is invalid or expired.
 
 **Solution:**
-1. Open http://localhost:8317/management.html
-2. Re-authenticate with your ChatGPT account
-3. The proxy saves the new token automatically
-
-> TODO: Verify exact OAuth flow steps on the Pi. Depends on installed CLIProxyAPI version.
+1. Verify your key at https://platform.moonshot.ai/
+2. Generate a new key if needed
+3. Update the environment variable:
+   ```bash
+   export MOONSHOT_API_KEY="sk-new-key-here"
+   ```
 
 ### OpenClaw paths not found
 
@@ -73,7 +69,7 @@ uv run python src/rlm_bridge.py \
 
 ### Insufficient memory
 
-**Symptom:** Process gets killed or Pi freezes.
+**Symptom:** Process gets killed or system freezes.
 
 **Cause:** Trying to load too many sessions in 8GB RAM.
 
@@ -92,17 +88,29 @@ uv run python src/rlm_bridge.py \
 **Symptom:** Command hangs without response.
 
 **Possible causes:**
-1. CLIProxyAPI not running
-2. Network issue with OpenAI
-3. Invalid OAuth session
+1. Network issue with Moonshot API
+2. Invalid API key
+3. API service down
 
 **Diagnosis:**
 ```bash
-# Verify CLIProxyAPI is running
-curl http://localhost:8317/health
+# Test API connectivity
+curl -s https://api.moonshot.ai/v1/models \
+  -H "Authorization: Bearer $MOONSHOT_API_KEY" | head
+```
 
-# View CLIProxyAPI logs
-journalctl --user -u cliproxyapi -f
+### Connection timeout to China endpoint
+
+**Symptom:** Timeout errors on API calls
+
+**Cause:** Network issues reaching Moonshot servers
+
+**Solution:**
+Try the alternate endpoint:
+```bash
+uv run python src/rlm_bridge.py \
+  --query "..." \
+  --base-url "https://api.moonshot.cn/v1"
 ```
 
 ### Tests fail
@@ -138,14 +146,11 @@ uv run python src/rlm_bridge.py \
 
 Logs are saved in `.jsonl` format and can be viewed with RLM visualizer.
 
-### View CLIProxyAPI logs
+### Check API key is set
 
 ```bash
-# If running as systemd service
-journalctl --user -u cliproxyapi -f
-
-# If running in terminal
-# Logs appear directly on stdout
+echo $MOONSHOT_API_KEY
+# Should show sk-... (not empty)
 ```
 
 ## Installation verification
@@ -154,12 +159,16 @@ journalctl --user -u cliproxyapi -f
 # 1. Python and RLM
 uv run python -c "from rlm import RLM; print('RLM OK')"
 
-# 2. CLIProxyAPI
-curl -s http://localhost:8317/health && echo "CLIProxyAPI OK"
+# 2. API key set
+[ -n "$MOONSHOT_API_KEY" ] && echo "API key OK" || echo "API key NOT SET"
 
-# 3. OpenClaw
+# 3. API connectivity
+curl -s https://api.moonshot.ai/v1/models \
+  -H "Authorization: Bearer $MOONSHOT_API_KEY" | grep -q "kimi" && echo "API OK"
+
+# 4. OpenClaw
 openclaw status
 
-# 4. Skill deployed
+# 5. Skill deployed
 ls ~/.openclaw/workspace/skills/rlm-engine/
 ```

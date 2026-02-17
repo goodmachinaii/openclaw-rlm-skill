@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-RLM Bridge for OpenClaw — v3
-Connects OpenClaw with RLM via CLIProxyAPI (OAuth ChatGPT).
-Models: GPT-5.3-Codex (root) + GPT-5.1-Codex-Mini (sub-LMs) via CLIProxyAPI.
+RLM Bridge for OpenClaw — v4
+Connects OpenClaw with RLM via Moonshot API (Kimi models).
+Models: kimi-k2-thinking (root) + kimi-k2.5 (sub-LMs) via Moonshot API.
 
 Usage:
+  export MOONSHOT_API_KEY="sk-your-key"
   uv run python src/rlm_bridge.py --query "What did we talk about yesterday?"
 """
 
@@ -21,8 +22,13 @@ from pathlib import Path
 # === CONSTANTS ===
 MAX_CHARS = 2_000_000       # ~500K tokens, safe for 8GB RAM
 MAX_SESSIONS_DEFAULT = 30
-CLIPROXYAPI_URL = "http://127.0.0.1:8317/v1"  # CLIProxyAPI default port
-CLIPROXYAPI_KEY = "sk-cliproxyapi-default-key-change-me"
+MOONSHOT_API_URL = "https://api.moonshot.ai/v1"
+MOONSHOT_API_KEY = os.environ.get("MOONSHOT_API_KEY", "")
+
+# Default models (Kimi)
+DEFAULT_ROOT_MODEL = "kimi-k2-thinking"
+DEFAULT_SUB_MODEL = "kimi-k2.5"
+DEFAULT_FALLBACK_MODEL = "kimi-k2-turbo"
 
 
 def find_sessions_dir(openclaw_home: str = "~/.openclaw") -> str:
@@ -265,7 +271,7 @@ def run_rlm(
         verbose=verbose,
     )
 
-    # Sub-LMs with cheaper model (4x more quota efficient)
+    # Sub-LMs with cheaper model (more efficient)
     if sub_model and sub_model != root_model:
         rlm_kwargs["other_backends"] = ["openai"]
         rlm_kwargs["other_backend_kwargs"] = [{
@@ -293,7 +299,7 @@ def run_rlm(
         error_str = str(e).lower()
         if "429" in error_str or "rate limit" in error_str or "quota" in error_str:
             return {
-                "response": "Your ChatGPT quota has been reached. "
+                "response": "Kimi API rate limit reached. "
                             "Please try again in a few minutes.",
                 "status": "rate_limited",
             }
@@ -301,25 +307,25 @@ def run_rlm(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="RLM Bridge for OpenClaw v3")
+    parser = argparse.ArgumentParser(description="RLM Bridge for OpenClaw v4 (Kimi)")
     parser.add_argument("--query", required=True, help="User question")
     parser.add_argument("--workspace",
                         default=os.path.expanduser("~/.openclaw/workspace"),
                         help="OpenClaw workspace directory")
     parser.add_argument("--sessions-dir", default=None,
                         help="Sessions directory (auto-detected if not specified)")
-    # Models
-    parser.add_argument("--root-model", default="gpt-5.3-codex",
-                        help="Main model for Root LM (default: gpt-5.3-codex)")
-    parser.add_argument("--sub-model", default="gpt-5.1-codex-mini",
-                        help="Cost-efficient model for Sub-LMs, 4x more efficient (default: gpt-5.1-codex-mini)")
-    parser.add_argument("--fallback-model", default="gpt-5.2",
-                        help="Fallback model if primary fails (default: gpt-5.2)")
-    # CLIProxyAPI
-    parser.add_argument("--base-url", default=CLIPROXYAPI_URL,
-                        help=f"CLIProxyAPI URL (default: {CLIPROXYAPI_URL})")
-    parser.add_argument("--api-key", default=CLIPROXYAPI_KEY,
-                        help="API key for CLIProxyAPI (any string)")
+    # Models (Kimi defaults)
+    parser.add_argument("--root-model", default=DEFAULT_ROOT_MODEL,
+                        help=f"Main model for Root LM (default: {DEFAULT_ROOT_MODEL})")
+    parser.add_argument("--sub-model", default=DEFAULT_SUB_MODEL,
+                        help=f"Cost-efficient model for Sub-LMs (default: {DEFAULT_SUB_MODEL})")
+    parser.add_argument("--fallback-model", default=DEFAULT_FALLBACK_MODEL,
+                        help=f"Fallback model if primary fails (default: {DEFAULT_FALLBACK_MODEL})")
+    # Moonshot API
+    parser.add_argument("--base-url", default=MOONSHOT_API_URL,
+                        help=f"Moonshot API URL (default: {MOONSHOT_API_URL})")
+    parser.add_argument("--api-key", default=MOONSHOT_API_KEY,
+                        help="Moonshot API key (default: from MOONSHOT_API_KEY env var)")
     # Options
     parser.add_argument("--max-sessions", type=int, default=MAX_SESSIONS_DEFAULT,
                         help=f"Maximum sessions to load (default: {MAX_SESSIONS_DEFAULT})")
@@ -328,6 +334,15 @@ def main():
     parser.add_argument("--log-dir", default=None,
                         help="Directory for RLM logs (.jsonl)")
     args = parser.parse_args()
+
+    # Verify API key is set
+    if not args.api_key:
+        print(json.dumps({
+            "response": "Error: MOONSHOT_API_KEY environment variable not set. "
+                        "Get your key at https://platform.moonshot.ai/",
+            "status": "error",
+        }, ensure_ascii=False))
+        sys.exit(1)
 
     # Auto-detect sessions dir if not specified
     if args.sessions_dir is None:

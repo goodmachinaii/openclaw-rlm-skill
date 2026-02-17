@@ -5,7 +5,9 @@
 [![OpenClaw](https://img.shields.io/badge/OpenClaw-skill-purple.svg)](https://github.com/openclaw)
 [![Platform](https://img.shields.io/badge/platform-ARM64%20%7C%20x86__64-lightgrey.svg)]()
 
-> **Razonamiento programático profundo sobre historial de conversaciones para OpenClaw.**
+> **Razonamiento programático profundo bajo demanda sobre historial de conversaciones para OpenClaw.**
+>
+> Complementa `memory_search` — solo se activa cuando pides explícitamente `/rlm`.
 
 [English](README.md)
 
@@ -13,9 +15,11 @@
 
 ## Por Qué Existe
 
-El `memory_search` integrado de OpenClaw es rápido (milisegundos) pero está limitado a devolver fragmentos cortos. Cuando necesitas **razonar** sobre tu historial de conversaciones—cruzar sesiones, encontrar patrones o analizar tendencias—necesitas algo más potente.
+El `memory_search` integrado de OpenClaw maneja el 90% de las consultas de memoria perfectamente—es rápido (~100ms) y gratis. **Úsalo por defecto.**
 
-Este skill integra [RLM (Recursive Language Models)](https://github.com/alexzhang13/rlm) para ejecutar código Python que razona sobre tu historial completo de conversaciones, habilitando consultas complejas que la búsqueda simple no puede responder.
+Este skill es para el 10% restante: cuando necesitas **analizar programáticamente** tu historial de conversaciones—contar ocurrencias, calcular estadísticas, o iterar sobre TODAS las sesiones en lugar de solo los mejores matches.
+
+[RLM (Recursive Language Models)](https://github.com/alexzhang13/rlm) ejecuta código Python que razona sobre tu historial completo. Es más lento (15-45s) y cuesta dinero (~$0.01-0.05/query), así que solo se activa cuando lo pides explícitamente.
 
 ## Cómo Funciona
 
@@ -44,42 +48,50 @@ Este skill integra [RLM (Recursive Language Models)](https://github.com/alexzhan
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                              RLM                                        │
-│  • Root LM decide estrategia de análisis (1 llamada)                    │
-│  • Sub-LMs navegan contexto (2-7 llamadas, 4x más barato)               │
+│  • Root LM: kimi-k2-thinking (decide estrategia, 1 llamada)             │
+│  • Sub-LMs: kimi-k2.5 (navegan contexto, 2-7 llamadas, 256K contexto)   │
 │  • Ejecuta código Python en REPL local                                  │
-│  • Fallback automático si el modelo primario falla                      │
+│  • Fallback automático a kimi-k2-turbo si el primario falla             │
 └─────────────────────────────────┬───────────────────────────────────────┘
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    CLIProxyAPI (puerto 8317)                            │
-│  • Convierte llamadas API a OAuth (usa tu suscripción ChatGPT)          │
-│  • $0 costo adicional                                                   │
-└─────────────────────────────────┬───────────────────────────────────────┘
-                                  │
-                                  ▼
-                          Servidores OpenAI
+│                     Moonshot API (api.moonshot.ai)                      │
+│  • Endpoint compatible con OpenAI                                       │
+│  • Pago por uso (~$0.01-0.05 por consulta)                              │
+│  • Llamadas HTTPS directas (sin proxy)                                  │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Cuándo Usar
 
-| Escenario | Herramienta | Tiempo de Respuesta |
-|-----------|-------------|---------------------|
-| Buscar un dato específico mencionado una vez | `memory_search` | ~100ms |
-| Cruzar información de múltiples sesiones | **rlm-engine** | 15-45s |
-| Analizar patrones o tendencias | **rlm-engine** | 15-45s |
-| Contar ocurrencias en el historial | **rlm-engine** | 15-45s |
-| Resumir todo sobre un tema | **rlm-engine** | 15-45s |
+Este skill usa **activación explícita únicamente**. El usuario debe pedir análisis RLM directamente.
 
-**Ejemplos:**
+| Usuario dice | Herramienta | Tiempo |
+|--------------|-------------|--------|
+| "¿De qué hablamos ayer?" | `memory_search` | ~100ms |
+| "¿Cuál era el endpoint de la API?" | `memory_search` | ~100ms |
+| "/rlm ¿cuántas veces discutimos Docker?" | **rlm-engine** | 15-45s |
+| "Usa RLM para encontrar patrones del mes" | **rlm-engine** | 15-45s |
+
+### Frases de activación
 
 ```
-✓ rlm-engine: "Compara lo que discutimos sobre la API la semana pasada vs hoy"
-✓ rlm-engine: "¿Cuáles son los temas más frecuentes del último mes?"
-✓ rlm-engine: "Encuentra todas las decisiones pendientes sobre infraestructura"
+/rlm <pregunta>
+usa RLM para...
+analiza con RLM...
+análisis profundo de...
+```
 
-✗ memory_search: "¿Cuál era el endpoint de la API que mencioné?"
-✗ memory_search: "¿Cuál era el comando para reiniciar el servidor?"
+### Ejemplos
+
+```
+✓ "/rlm compara lo que discutimos sobre la API la semana pasada vs hoy"
+✓ "Usa RLM para encontrar los temas más frecuentes del último mes"
+✓ "Analiza con RLM todas las decisiones pendientes sobre infraestructura"
+
+✗ "¿Cuál era el endpoint de la API?" → memory_search (sin trigger RLM)
+✗ "Encuentra patrones en nuestras conversaciones" → memory_search (sin pedido explícito)
 ```
 
 ## Requisitos
@@ -91,7 +103,7 @@ Este skill integra [RLM (Recursive Language Models)](https://github.com/alexzhan
 | OpenClaw | Instalado y funcionando |
 | Python | 3.11+ |
 | Node.js | 22+ |
-| ChatGPT | Suscripción Pro o Max (para OAuth) |
+| Moonshot API | API key de https://platform.moonshot.ai/ |
 
 ## Inicio Rápido
 
@@ -101,16 +113,19 @@ git clone https://github.com/angelgalvisc/openclaw-rlm-skill.git
 cd openclaw-rlm-skill
 ./install.sh
 
-# Iniciar CLIProxyAPI y autenticarse
-cli-proxy-api --config ~/.cli-proxy-api/config.yaml
-# Abrir http://localhost:8317/management.html → login con ChatGPT
+# Configurar tu API key
+export MOONSHOT_API_KEY="sk-your-key-here"
+
+# O agregar a ~/.bashrc para persistencia
+echo 'export MOONSHOT_API_KEY="sk-your-key-here"' >> ~/.bashrc
+source ~/.bashrc
 
 # Reiniciar OpenClaw
 openclaw gateway restart
 ```
 
 Probar desde Telegram:
-> "¿De qué hemos hablado esta semana?"
+> "/rlm ¿qué patrones ves en nuestras conversaciones de esta semana?"
 
 ## Instalación (Detallada)
 
@@ -132,17 +147,19 @@ chmod +x install.sh
 El instalador:
 - Instala Python 3.11+ y uv (si faltan)
 - Instala la biblioteca RLM
-- Compila CLIProxyAPI desde source (para ARM64)
 - Despliega el skill a `~/.openclaw/workspace/skills/rlm-engine/`
 
-### 3. Configurar OAuth
+### 3. Configurar API Key
+
+Obtén tu API key en https://platform.moonshot.ai/
 
 ```bash
-# Iniciar proxy
-cli-proxy-api --config ~/.cli-proxy-api/config.yaml
+# Para la sesión actual
+export MOONSHOT_API_KEY="sk-your-key-here"
 
-# Abrir navegador y autenticarse
-open http://localhost:8317/management.html
+# Para persistencia, agregar a tu shell config
+echo 'export MOONSHOT_API_KEY="sk-your-key-here"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ### 4. Reiniciar OpenClaw
@@ -158,9 +175,9 @@ openclaw gateway restart
 ```bash
 uv run python src/rlm_bridge.py \
   --query "Tu pregunta" \
-  --root-model gpt-5.3-codex \      # Modelo principal de razonamiento
-  --sub-model gpt-5.1-codex-mini \  # Navegación de contexto (4x más barato)
-  --fallback-model gpt-5.2 \        # Usado si el primario falla
+  --root-model kimi-k2-thinking \   # Modelo principal de razonamiento
+  --sub-model kimi-k2.5 \           # Navegación de contexto (256K contexto)
+  --fallback-model kimi-k2-turbo \  # Usado si el primario falla
   --max-sessions 30 \               # Límite de sesiones cargadas
   --verbose \                       # Salida detallada
   --log-dir /tmp/rlm-logs           # Guardar logs de ejecución
@@ -179,16 +196,24 @@ uv run python src/rlm_bridge.py \
 
 | Rol | Modelo Default | Llamadas/Query | Notas |
 |-----|----------------|----------------|-------|
-| Root LM | gpt-5.3-codex | 1 | Razonamiento principal |
-| Sub-LMs | gpt-5.1-codex-mini | 2-7 | 4x más eficiente en cuota |
-| Fallback | gpt-5.2 | varía | Automático al fallar |
+| Root LM | kimi-k2-thinking | 1 | Razonamiento principal, análisis complejo |
+| Sub-LMs | kimi-k2.5 | 2-7 | Navegación de contexto, ventana 256K |
+| Fallback | kimi-k2-turbo | varía | Automático al fallar |
+
+### Costos
+
+| Modelo | Input | Output | Uso típico |
+|--------|-------|--------|------------|
+| kimi-k2-thinking | ~$0.60/M | ~$2.50/M | 1 llamada (root) |
+| kimi-k2.5 | ~$0.60/M | ~$2.50/M | 2-7 llamadas (sub) |
+| **Por consulta** | | | **~$0.01-0.05** |
 
 ## Estructura del Proyecto
 
 ```
 openclaw-rlm-skill/
 ├── src/
-│   └── rlm_bridge.py       # Bridge principal (382 líneas)
+│   └── rlm_bridge.py       # Bridge principal
 │                           # - find_sessions_dir(): auto-detecta rutas
 │                           # - parse_jsonl_session(): JSONL → texto
 │                           # - load_workspace(): MEMORY.md, SOUL.md, etc.
@@ -201,12 +226,10 @@ openclaw-rlm-skill/
 │   ├── test_model_config.py   # Tests de configuración de modelos
 │   └── test_fallback.py       # Tests de comportamiento fallback
 ├── scripts/
-│   ├── setup-cliproxyapi.sh
 │   ├── setup-rlm.sh
 │   └── deploy-skill.sh
 ├── config/
-│   ├── cliproxyapi-example.yaml
-│   └── cliproxyapi.service  # unidad systemd
+│   └── moonshot.env.example   # Template de API key
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   └── TROUBLESHOOTING.md
@@ -247,30 +270,32 @@ cd ~/rlm/visualizer && npm run dev
 # Abrir http://localhost:3001
 ```
 
-### Ver Logs de CLIProxyAPI
+### Probar Conectividad API
 
 ```bash
-journalctl --user -u cliproxyapi -f
+curl -s https://api.moonshot.ai/v1/models \
+  -H "Authorization: Bearer $MOONSHOT_API_KEY" | head
 ```
 
 ## Solución de Problemas
 
 | Problema | Solución |
 |----------|----------|
+| API key no configurada | `export MOONSHOT_API_KEY="sk-..."` |
 | Rate limit (429) | Espera unos minutos o usa `memory_search` |
-| OAuth expirado (401) | Re-autentícate en http://localhost:8317/management.html |
+| API key inválida (401) | Verifica la key en https://platform.moonshot.ai/ |
 | No encuentra sesiones | Verifica ruta: `ls ~/.openclaw/agents/*/sessions/*.jsonl` |
 | Sin memoria | Reduce `--max-sessions 15` |
-| CLIProxyAPI no compila | Ver [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) para alternativas |
+| Timeout de conexión | Prueba endpoint alterno: `--base-url https://api.moonshot.cn/v1` |
 
 Guía completa: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
 ## Consideraciones de Seguridad
 
-- **Tokens OAuth** se almacenan por CLIProxyAPI en `~/.cli-proxy-api/`
-- **API keys** para CLIProxyAPI son strings placeholder (no secretos reales)
-- **Datos de sesión** permanecen locales—solo las queries se envían a OpenAI
+- **API keys** almacenadas como variables de entorno (no en código)
+- **Datos de sesión** permanecen locales—solo las queries se envían a Moonshot API
 - **Sin telemetría** ni recolección de datos externa
+- **Solo HTTPS** para todas las comunicaciones API
 
 ## Contribuir
 
@@ -288,5 +313,5 @@ Licencia MIT. Ver [LICENSE](LICENSE) para detalles.
 ## Agradecimientos
 
 - [RLM](https://github.com/alexzhang13/rlm) por Alex Zhang
-- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) para proxy OAuth
+- [Moonshot AI](https://platform.moonshot.ai/) por los modelos Kimi
 - Ecosistema [OpenClaw](https://github.com/openclaw)
