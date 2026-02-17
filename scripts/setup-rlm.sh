@@ -35,18 +35,18 @@ cd "$SCRIPT_DIR"
 echo ""
 echo "Project directory: $SCRIPT_DIR"
 
-# Create venv and install RLM
+# Create venv and install rlms
 echo ""
 echo "Creating virtual environment..."
 uv venv --python 3.12 2>/dev/null || uv venv
 
 echo ""
-echo "Installing RLM..."
-uv pip install rlm
+echo "Installing rlms..."
+uv pip install rlms
 
 echo ""
 echo "Installation complete!"
 echo ""
 echo "To verify:"
 echo "  cd $SCRIPT_DIR"
-echo "  uv run python -c 'from rlm import RLM; print(\"RLM OK\")'"
+echo "  uv run python -c 'from rlm import RLM; print(\"rlms OK\")'"

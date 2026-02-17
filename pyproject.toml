@@ -1,7 +1,7 @@
 [project]
 name = "openclaw-rlm-skill"
-version = "3.1.0"
-description = "OpenClaw skill que integra RLM para razonamiento programático sobre historial ilimitado"
+version = "4.2.0"
+description = "OpenClaw skill that integrates Recursive Language Models for deep programmatic memory analysis"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"

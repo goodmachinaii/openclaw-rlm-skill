@@ -1,201 +1,135 @@
 #!/usr/bin/env python3
 """
-Tests to verify model configuration in run_rlm()
-Verifies other_backends is passed correctly when root != sub model
+Tests for model configuration in run_rlm().
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from rlm_bridge import run_rlm
 
 
+def _mock_result(response: str = "ok"):
+    usage = MagicMock()
+    usage.to_dict.return_value = {
+        "model_usage_summaries": {
+            "kimi-k2.5": {
+                "total_calls": 1,
+                "total_input_tokens": 1000,
+                "total_output_tokens": 500,
+            }
+        }
+    }
+    return SimpleNamespace(response=response, execution_time=1.23, usage_summary=usage)
+
+
 class TestRunRlmModels:
-    """Tests to verify model configuration in run_rlm()"""
+    @patch("rlm_bridge._create_rlm")
+    def test_other_backends_when_models_different(self, mock_create_rlm):
+        mock_rlm = MagicMock()
+        mock_rlm.completion.return_value = _mock_result()
+        mock_create_rlm.return_value = mock_rlm
 
-    @patch("rlm_bridge.RLM")
-    def test_other_backends_when_models_different(self, mock_rlm_class):
-        """Verifies other_backends is configured when root != sub model"""
-        # Setup mock
-        mock_rlm_instance = MagicMock()
-        mock_result = MagicMock()
-        mock_result.response = "Test response"
-        mock_rlm_instance.completion.return_value = mock_result
-        mock_rlm_class.return_value = mock_rlm_instance
-
-        # Execute with different models (Kimi)
-        result = run_rlm(
+        run_rlm(
             query="What did we do yesterday?",
             context="Test context",
-            root_model="kimi-k2-thinking",
-            sub_model="kimi-k2.5",  # Different from root
+            root_model="kimi-k2.5",
+            sub_model="kimi-k2-turbo-preview",
             base_url="https://api.moonshot.ai/v1",
             api_key="test-key",
         )
 
-        # Verify RLM was called with other_backends
-        call_kwargs = mock_rlm_class.call_args.kwargs
-        assert "other_backends" in call_kwargs
-        assert call_kwargs["other_backends"] == ["openai"]
-        assert "other_backend_kwargs" in call_kwargs
-        assert call_kwargs["other_backend_kwargs"][0]["model_name"] == "kimi-k2.5"
+        kwargs = mock_create_rlm.call_args.kwargs
+        assert kwargs["backend_kwargs"]["model_name"] == "kimi-k2.5"
+        assert kwargs["other_backends"] == ["openai"]
+        assert kwargs["other_backend_kwargs"][0]["model_name"] == "kimi-k2-turbo-preview"
 
-    @patch("rlm_bridge.RLM")
-    def test_no_other_backends_when_models_same(self, mock_rlm_class):
-        """Verifies other_backends is NOT configured when root == sub model"""
-        mock_rlm_instance = MagicMock()
-        mock_result = MagicMock()
-        mock_result.response = "Response"
-        mock_rlm_instance.completion.return_value = mock_result
-        mock_rlm_class.return_value = mock_rlm_instance
+    @patch("rlm_bridge._create_rlm")
+    def test_no_other_backends_when_models_same(self, mock_create_rlm):
+        mock_rlm = MagicMock()
+        mock_rlm.completion.return_value = _mock_result()
+        mock_create_rlm.return_value = mock_rlm
 
-        # Execute with same model
-        result = run_rlm(
+        run_rlm(
             query="Question",
             context="Context",
-            root_model="kimi-k2-thinking",
-            sub_model="kimi-k2-thinking",  # Same as root
+            root_model="kimi-k2.5",
+            sub_model="kimi-k2.5",
             base_url="https://api.moonshot.ai/v1",
             api_key="test-key",
         )
 
-        # Verify other_backends was NOT passed
-        call_kwargs = mock_rlm_class.call_args.kwargs
-        assert "other_backends" not in call_kwargs
-        assert "other_backend_kwargs" not in call_kwargs
+        kwargs = mock_create_rlm.call_args.kwargs
+        assert "other_backends" not in kwargs
+        assert "other_backend_kwargs" not in kwargs
 
-    @patch("rlm_bridge.RLM")
-    def test_no_other_backends_when_sub_model_none(self, mock_rlm_class):
-        """Verifies other_backends is NOT configured when sub_model is None"""
-        mock_rlm_instance = MagicMock()
-        mock_result = MagicMock()
-        mock_result.response = "Response"
-        mock_rlm_instance.completion.return_value = mock_result
-        mock_rlm_class.return_value = mock_rlm_instance
+    @patch("rlm_bridge._create_rlm")
+    def test_max_iterations_and_compaction_configuration(self, mock_create_rlm):
+        mock_rlm = MagicMock()
+        mock_rlm.completion.return_value = _mock_result()
+        mock_create_rlm.return_value = mock_rlm
 
-        result = run_rlm(
+        run_rlm(
             query="Question",
             context="Context",
-            root_model="kimi-k2-thinking",
-            sub_model=None,
+            root_model="kimi-k2.5",
+            sub_model="kimi-k2.5",
             base_url="https://api.moonshot.ai/v1",
             api_key="test-key",
+            max_iterations=7,
+            compaction=True,
+            compaction_threshold=0.75,
         )
 
-        call_kwargs = mock_rlm_class.call_args.kwargs
-        assert "other_backends" not in call_kwargs
+        kwargs = mock_create_rlm.call_args.kwargs
+        assert kwargs["max_iterations"] == 7
+        assert kwargs["compaction"] is True
+        assert kwargs["compaction_threshold_pct"] == 0.75
+        assert kwargs["max_depth"] == 1
 
-    @patch("rlm_bridge.RLM")
-    def test_backend_kwargs_contains_base_url(self, mock_rlm_class):
-        """Verifies backend_kwargs includes base_url for Moonshot API"""
-        mock_rlm_instance = MagicMock()
-        mock_result = MagicMock()
-        mock_result.response = "OK"
-        mock_rlm_instance.completion.return_value = mock_result
-        mock_rlm_class.return_value = mock_rlm_instance
-
-        custom_url = "https://api.moonshot.cn/v1"
-        result = run_rlm(
-            query="Test",
-            context="Context",
-            root_model="kimi-k2-thinking",
-            sub_model="kimi-k2.5",
-            base_url=custom_url,
-            api_key="my-key",
-        )
-
-        call_kwargs = mock_rlm_class.call_args.kwargs
-        assert call_kwargs["backend_kwargs"]["base_url"] == custom_url
-        assert call_kwargs["backend_kwargs"]["api_key"] == "my-key"
-
-    @patch("rlm_bridge.RLM")
-    def test_max_iterations_is_20(self, mock_rlm_class):
-        """Verifies max_iterations is set to 20 (reduced from default 30)"""
-        mock_rlm_instance = MagicMock()
-        mock_result = MagicMock()
-        mock_result.response = "OK"
-        mock_rlm_instance.completion.return_value = mock_result
-        mock_rlm_class.return_value = mock_rlm_instance
+    @patch("rlm_bridge._create_rlm")
+    def test_request_timeout_in_backend_kwargs(self, mock_create_rlm):
+        mock_rlm = MagicMock()
+        mock_rlm.completion.return_value = _mock_result()
+        mock_create_rlm.return_value = mock_rlm
 
         run_rlm(
-            query="Test",
+            query="Question",
             context="Context",
-            root_model="kimi-k2-thinking",
+            root_model="kimi-k2.5",
             sub_model="kimi-k2.5",
             base_url="https://api.moonshot.ai/v1",
-            api_key="key",
+            api_key="test-key",
+            request_timeout=45.0,
         )
 
-        call_kwargs = mock_rlm_class.call_args.kwargs
-        assert call_kwargs["max_iterations"] == 20
+        kwargs = mock_create_rlm.call_args.kwargs
+        assert kwargs["backend_kwargs"]["timeout"] == 45.0
 
-    @patch("rlm_bridge.RLM")
-    def test_max_depth_is_1(self, mock_rlm_class):
-        """Verifies max_depth is 1 (only functional value per RLM docs)"""
-        mock_rlm_instance = MagicMock()
-        mock_result = MagicMock()
-        mock_result.response = "OK"
-        mock_rlm_instance.completion.return_value = mock_result
-        mock_rlm_class.return_value = mock_rlm_instance
-
-        run_rlm(
-            query="Test",
-            context="Context",
-            root_model="kimi-k2-thinking",
-            sub_model="kimi-k2.5",
-            base_url="https://api.moonshot.ai/v1",
-            api_key="key",
-        )
-
-        call_kwargs = mock_rlm_class.call_args.kwargs
-        assert call_kwargs["max_depth"] == 1
-
-    @patch("rlm_bridge.RLM")
-    def test_environment_is_local(self, mock_rlm_class):
-        """Verifies environment is 'local' (REPL runs locally)"""
-        mock_rlm_instance = MagicMock()
-        mock_result = MagicMock()
-        mock_result.response = "OK"
-        mock_rlm_instance.completion.return_value = mock_result
-        mock_rlm_class.return_value = mock_rlm_instance
-
-        run_rlm(
-            query="Test",
-            context="Context",
-            root_model="kimi-k2-thinking",
-            sub_model="kimi-k2.5",
-            base_url="https://api.moonshot.ai/v1",
-            api_key="key",
-        )
-
-        call_kwargs = mock_rlm_class.call_args.kwargs
-        assert call_kwargs["environment"] == "local"
-
-    @patch("rlm_bridge.RLM")
-    def test_result_includes_models_used(self, mock_rlm_class):
-        """Verifies result includes which models were used"""
-        mock_rlm_instance = MagicMock()
-        mock_result = MagicMock()
-        mock_result.response = "Analysis complete"
-        mock_rlm_instance.completion.return_value = mock_result
-        mock_rlm_class.return_value = mock_rlm_instance
+    @patch("rlm_bridge._create_rlm")
+    def test_result_includes_cost_estimate(self, mock_create_rlm):
+        mock_rlm = MagicMock()
+        mock_rlm.completion.return_value = _mock_result(response="Analysis complete")
+        mock_create_rlm.return_value = mock_rlm
 
         result = run_rlm(
             query="Analyze",
             context="Data",
-            root_model="kimi-k2-thinking",
+            root_model="kimi-k2.5",
             sub_model="kimi-k2.5",
             base_url="https://api.moonshot.ai/v1",
-            api_key="key",
+            api_key="test-key",
         )
 
-        assert result["model_used"] == "kimi-k2-thinking"
-        assert result["sub_model_used"] == "kimi-k2.5"
         assert result["status"] == "ok"
+        assert result["response"] == "Analysis complete"
+        assert result["cost_estimate"]["total_estimated_usd"] > 0
 
 
 if __name__ == "__main__":

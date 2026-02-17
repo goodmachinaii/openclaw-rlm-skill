@@ -4,7 +4,7 @@ description: >
   Deep programmatic reasoning over complete conversation history using RLM.
   Only activates when user EXPLICITLY requests it with "/rlm" or "use RLM".
   Takes 15-45 seconds, costs ~$0.01-0.05 per query.
-version: 4.1.0
+version: 4.2.0
 ---
 
 # RLM Engine — Explicit deep reasoning over history
@@ -61,6 +61,7 @@ Do not try to guess — if they don't say "RLM", use memory_search.
 
 ```bash
 cd ~/openclaw-rlm-skill && uv run python src/rlm_bridge.py \
+  --profile-model cost \
   --query "EXACT USER QUESTION (without the /rlm prefix)"
 ```
 
@@ -72,7 +73,7 @@ cd ~/openclaw-rlm-skill && uv run python src/rlm_bridge.py \
 
 ## Technical details
 
-- Models: kimi-k2-thinking (root) + kimi-k2.5 (sub-LMs) + kimi-k2-turbo (fallback)
-- Context: loads up to 30 sessions, 2M characters max
+- Models (default profile `cost`): kimi-k2.5 (root) + kimi-k2.5 (sub) + kimi-k2-turbo (fallback)
+- Context: loads up to 30 sessions, 200K characters max (configurable)
 - API: Moonshot API (requires MOONSHOT_API_KEY environment variable)
 - Cost: ~$0.01-0.05 per query (pay-as-you-go)

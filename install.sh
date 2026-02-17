@@ -48,14 +48,14 @@ if ! command -v uv &>/dev/null; then
 fi
 echo "  - uv: OK"
 
-# 4. Create venv and install RLM
+# 4. Create venv and install rlms
 echo ""
-echo "[4/5] Installing Python dependencies (RLM)..."
+echo "[4/5] Installing Python dependencies (rlms)..."
 
 cd "$(dirname "$0")"
 uv venv --python 3.12 2>/dev/null || uv venv
-uv pip install rlm
-echo "  - RLM: OK"
+uv pip install rlms
+echo "  - rlms: OK"
 
 # 5. Deploy skill to OpenClaw
 echo ""
