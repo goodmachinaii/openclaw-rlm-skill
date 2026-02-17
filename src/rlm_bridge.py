@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RLM Bridge for OpenClaw — v4
+RLM Bridge for OpenClaw — v4.1 ASYNC OPTIMIZED
 Connects OpenClaw with RLM via Moonshot API (Kimi models).
 Models: kimi-k2-thinking (root) + kimi-k2.5 (sub-LMs) via Moonshot API.
 
@@ -12,21 +12,33 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+
+# Async file I/O
+try:
+    import aiofiles
+    HAS_AIOFILES = True
+except ImportError:
+    HAS_AIOFILES = False
+    print("Warning: aiofiles not available, falling back to sync mode")
 
 
 # === CONSTANTS ===
-MAX_CHARS = 2_000_000       # ~500K tokens, safe for 8GB RAM
+MAX_CHARS = 200_000         # ~50K tokens, sufficient for session analysis
 MAX_SESSIONS_DEFAULT = 30
 MOONSHOT_API_URL = "https://api.moonshot.ai/v1"
 MOONSHOT_API_KEY = os.environ.get("MOONSHOT_API_KEY", "")
+MAX_WORKERS = 4             # For ThreadPoolExecutor
 
 # Default models (Kimi)
-DEFAULT_ROOT_MODEL = "kimi-k2-thinking"
+DEFAULT_ROOT_MODEL = "kimi-k2.5"
 DEFAULT_SUB_MODEL = "kimi-k2.5"
 DEFAULT_FALLBACK_MODEL = "kimi-k2-turbo"
 
@@ -34,16 +46,8 @@ DEFAULT_FALLBACK_MODEL = "kimi-k2-turbo"
 def find_sessions_dir(openclaw_home: str = "~/.openclaw") -> str:
     """
     Auto-detects where OpenClaw stores sessions.
-
-    OpenClaw directory structure:
-      ~/.openclaw/agents/<agentId>/sessions/*.jsonl   <- JSONL transcripts
-      ~/.openclaw/agents/<agentId>/sessions/sessions.json  <- index
-      ~/.openclaw/agents/<agentId>/qmd/sessions/      <- QMD exports (sanitized Markdown)
-      ~/.openclaw/workspace/memory/YYYY-MM-DD.md      <- daily notes
-      ~/.openclaw/workspace/MEMORY.md                 <- long-term memory
     """
     home = Path(openclaw_home).expanduser()
-    # Search in agent directories (actual location)
     agents_dir = home / "agents"
     if agents_dir.exists():
         for agent_dir in sorted(agents_dir.iterdir()):
@@ -53,84 +57,159 @@ def find_sessions_dir(openclaw_home: str = "~/.openclaw") -> str:
                 if jsonl_files:
                     return str(sessions_dir)
 
-    # Legacy fallback: some older setups
     for candidate in [home / "sessions", home / "workspace" / "sessions"]:
         if candidate.exists() and any(candidate.iterdir()):
             return str(candidate)
 
-    # Default: first agent
     return str(home / "agents" / "main" / "sessions")
 
 
-def parse_jsonl_session(filepath: Path) -> str:
+def parse_jsonl_session_content(raw_content: str) -> str:
     """
-    Converts an OpenClaw JSONL session file to readable text.
-
-    OpenClaw JSONL format:
-      Each line is JSON with: type, timestamp, message.role, message.content[]
-      message.content[] contains objects with type="text" (readable) or type="toolCall" etc.
-      Roles: "user", "assistant", "toolResult"
-
-    Only extracts readable text (user + assistant), ignores toolResult and toolCall
-    to keep context clean and reduce tokens.
+    Parse JSONL content to readable text (CPU-bound operation).
     """
     lines = []
-    try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-            for raw_line in f:
-                raw_line = raw_line.strip()
-                if not raw_line:
-                    continue
-                try:
-                    entry = json.loads(raw_line)
-                except json.JSONDecodeError:
-                    continue
+    for raw_line in raw_content.strip().split('\n'):
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            entry = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
 
-                msg = entry.get("message", {})
-                role = msg.get("role", "")
-                # Only user and assistant — toolResult is noise for analysis
-                if role not in ("user", "assistant"):
-                    continue
+        msg = entry.get("message", {})
+        role = msg.get("role", "")
+        if role not in ("user", "assistant"):
+            continue
 
-                content_blocks = msg.get("content", [])
-                if isinstance(content_blocks, str):
-                    # Simplified format (direct string)
-                    lines.append(f"[{role}]: {content_blocks}")
-                    continue
+        content_blocks = msg.get("content", [])
+        if isinstance(content_blocks, str):
+            lines.append(f"[{role}]: {content_blocks}")
+            continue
 
-                text_parts = []
-                for block in content_blocks:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        text = block.get("text", "").strip()
-                        if text:
-                            text_parts.append(text)
-                if text_parts:
-                    lines.append(f"[{role}]: {' '.join(text_parts)}")
-
-    except (PermissionError, OSError):
-        return ""
+        text_parts = []
+        for block in content_blocks:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "").strip()
+                if text:
+                    text_parts.append(text)
+        if text_parts:
+            lines.append(f"[{role}]: {' '.join(text_parts)}")
 
     return "\n".join(lines)
 
 
-def load_workspace(workspace_dir: str) -> str:
-    """
-    Loads OpenClaw workspace files.
-    Includes context files AND daily memory notes.
+# === ASYNC FUNCTIONS ===
 
-    Workspace structure:
-      MEMORY.md      <- curated long-term memory
-      SOUL.md        <- personality and values
-      AGENTS.md      <- operational instructions
-      USER.md        <- user preferences
-      IDENTITY.md    <- name, vibe, emoji
-      TOOLS.md       <- tool notes
-      memory/YYYY-MM-DD.md  <- daily notes (recent context)
+async def read_file_async(filepath: Path) -> str:
+    """Read file content asynchronously."""
+    if not HAS_AIOFILES:
+        # Fallback to sync
+        return filepath.read_text(encoding="utf-8", errors="ignore")
+    
+    async with aiofiles.open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        return await f.read()
+
+
+async def process_session_file(filepath: Path, mtime: float, fmt: str) -> tuple:
     """
+    Process a single session file: read + parse.
+    Returns (date_str, content) or None if failed.
+    """
+    try:
+        if fmt == "jsonl":
+            raw_content = await read_file_async(filepath)
+            content = parse_jsonl_session_content(raw_content)
+        else:
+            content = await read_file_async(filepath)
+        
+        if len(content.strip()) < 50:
+            return None
+            
+        date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        session_name = filepath.stem
+        formatted = f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt} ===\n{content}"
+        return (date_str, formatted)
+    except (PermissionError, UnicodeDecodeError, OSError):
+        return None
+
+
+async def load_sessions_parallel(sessions_dir: str, max_sessions: int = MAX_SESSIONS_DEFAULT) -> str:
+    """
+    Load sessions using async I/O for better performance.
+    """
+    start_time = time.time()
+    sessions = Path(sessions_dir)
+    if not sessions.exists():
+        return "[No sessions available]"
+
+    # Collect all session files (sync - fast)
+    session_files = []
+    
+    for p in sessions.glob("*.jsonl"):
+        if p.name == "sessions.json":
+            continue
+        try:
+            session_files.append((p.stat().st_mtime, p, "jsonl"))
+        except OSError:
+            continue
+
+    qmd_sessions = sessions.parent / "qmd" / "sessions"
+    if qmd_sessions.exists():
+        for p in qmd_sessions.rglob("*.md"):
+            try:
+                session_files.append((p.stat().st_mtime, p, "md"))
+            except OSError:
+                continue
+
+    if not session_files:
+        for p in sessions.rglob("transcript.md"):
+            try:
+                session_files.append((p.stat().st_mtime, p, "md"))
+            except OSError:
+                continue
+
+    session_files.sort(key=lambda x: x[0], reverse=True)
+    session_files = session_files[:max_sessions]
+
+    # Process files concurrently 🚀
+    tasks = [
+        process_session_file(filepath, mtime, fmt)
+        for mtime, filepath, fmt in session_files
+    ]
+    results = await asyncio.gather(*tasks)
+    
+    # Filter valid results and assemble
+    parts = []
+    total_chars = 0
+    
+    for result in results:
+        if result is None:
+            continue
+        _, content = result
+        if total_chars >= MAX_CHARS:
+            break
+        if total_chars + len(content) > MAX_CHARS:
+            remaining = MAX_CHARS - total_chars
+            if remaining > 1000:
+                content = content[:remaining] + "\n[...truncated due to memory limit]"
+                parts.append(content)
+            break
+        parts.append(content)
+        total_chars += len(content)
+
+    elapsed = time.time() - start_time
+    print(f"[Async] Loaded {len(parts)} sessions in {elapsed:.2f}s", file=sys.stderr)
+    
+    return "\n\n".join(parts) if parts else "[No sessions loaded]"
+
+
+def load_workspace_sync(workspace_dir: str) -> str:
+    """Load workspace files (sync - already fast)."""
     workspace = Path(workspace_dir)
     parts = []
 
-    # 1. Main context files
     for filename in ["MEMORY.md", "SOUL.md", "AGENTS.md", "USER.md",
                      "IDENTITY.md", "TOOLS.md"]:
         filepath = workspace / filename
@@ -142,21 +221,20 @@ def load_workspace(workspace_dir: str) -> str:
             except (PermissionError, OSError) as e:
                 parts.append(f"=== {filename} === [Error: {e}]")
 
-    # 2. Daily memory notes (memory/YYYY-MM-DD.md) — most recent first
     memory_dir = workspace / "memory"
     if memory_dir.exists():
         daily_files = sorted(
             memory_dir.glob("*.md"),
-            key=lambda p: p.stem,  # YYYY-MM-DD sorts chronologically
+            key=lambda p: p.stem,
             reverse=True,
         )
         daily_chars = 0
-        for daily_file in daily_files[:30]:  # last 30 days max
+        for daily_file in daily_files[:30]:
             try:
                 content = daily_file.read_text(encoding="utf-8", errors="ignore")
                 if not content.strip() or len(content) < 20:
                     continue
-                if daily_chars + len(content) > 200_000:  # cap for daily notes
+                if daily_chars + len(content) > 200_000:
                     break
                 parts.append(f"=== DAILY:{daily_file.name} ===\n{content}")
                 daily_chars += len(content)
@@ -166,81 +244,7 @@ def load_workspace(workspace_dir: str) -> str:
     return "\n\n".join(parts)
 
 
-def load_sessions(sessions_dir: str, max_sessions: int = MAX_SESSIONS_DEFAULT) -> str:
-    """
-    Loads OpenClaw sessions. Supports both formats:
-      - *.jsonl (native OpenClaw format — append-only JSONL)
-      - *.md (sanitized QMD exports, or legacy transcript.md)
-
-    JSONL sessions are the main format since 2025.
-    MD files may exist in ~/.openclaw/agents/<id>/qmd/sessions/ as
-    sanitized QMD exports.
-    """
-    sessions = Path(sessions_dir)
-    if not sessions.exists():
-        return "[No sessions available]"
-
-    # Collect all session files (JSONL first, then MD)
-    session_files = []
-
-    # 1. JSONL files (native format — primary data source)
-    for p in sessions.glob("*.jsonl"):
-        if p.name == "sessions.json":  # index, not transcript
-            continue
-        try:
-            session_files.append((p.stat().st_mtime, p, "jsonl"))
-        except OSError:
-            continue
-
-    # 2. MD files in QMD exports (if they exist)
-    qmd_sessions = sessions.parent / "qmd" / "sessions"
-    if qmd_sessions.exists():
-        for p in qmd_sessions.rglob("*.md"):
-            try:
-                session_files.append((p.stat().st_mtime, p, "md"))
-            except OSError:
-                continue
-
-    # 3. Fallback: legacy transcript.md
-    if not session_files:
-        for p in sessions.rglob("transcript.md"):
-            try:
-                session_files.append((p.stat().st_mtime, p, "md"))
-            except OSError:
-                continue
-
-    session_files.sort(key=lambda x: x[0], reverse=True)
-    session_files = session_files[:max_sessions]
-
-    parts = []
-    total_chars = 0
-
-    for mtime, filepath, fmt in session_files:
-        if total_chars >= MAX_CHARS:
-            break
-        try:
-            if fmt == "jsonl":
-                content = parse_jsonl_session(filepath)
-            else:
-                content = filepath.read_text(encoding="utf-8", errors="ignore")
-
-            if len(content.strip()) < 50:
-                continue
-            if total_chars + len(content) > MAX_CHARS:
-                remaining = MAX_CHARS - total_chars
-                if remaining > 1000:
-                    content = content[:remaining] + "\n[...truncated due to memory limit]"
-                else:
-                    break
-            session_name = filepath.stem  # name without extension
-            date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
-            parts.append(f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt} ===\n{content}")
-            total_chars += len(content)
-        except (PermissionError, UnicodeDecodeError, OSError):
-            continue
-
-    return "\n\n".join(parts) if parts else "[No sessions loaded]"
-
+# === SYNC FUNCTIONS (RLM is inherently synchronous) ===
 
 def run_rlm(
     query: str,
@@ -254,7 +258,6 @@ def run_rlm(
 ) -> dict:
     """
     Executes RLM with main model (root) and cost-efficient model (sub-LMs).
-    Handles rate limits (429) with user-friendly message.
     """
     from rlm import RLM
 
@@ -266,12 +269,11 @@ def run_rlm(
             "api_key": api_key,
         },
         environment="local",
-        max_iterations=20,
-        max_depth=1,  # Only functional value currently (RLM docs: "This is a TODO")
+        max_iterations=5,  # Professional: explore + chunk + analyze + consolidate
+        max_depth=1,
         verbose=verbose,
     )
 
-    # Sub-LMs with cheaper model (more efficient)
     if sub_model and sub_model != root_model:
         rlm_kwargs["other_backends"] = ["openai"]
         rlm_kwargs["other_backend_kwargs"] = [{
@@ -280,7 +282,6 @@ def run_rlm(
             "api_key": api_key,
         }]
 
-    # Optional logging
     if log_dir:
         from rlm.logger import RLMLogger
         rlm_kwargs["logger"] = RLMLogger(log_dir=log_dir)
@@ -288,73 +289,82 @@ def run_rlm(
     rlm = RLM(**rlm_kwargs)
 
     try:
-        result = rlm.completion(query, context=context)
+        result = rlm.completion(prompt=context, root_prompt=query)
+        
+        # Extraer información de uso si está disponible
+        usage_info = {}
+        if result.usage_summary:
+            usage_info = result.usage_summary.to_dict()
+        
         return {
             "response": result.response,
             "model_used": root_model,
             "sub_model_used": sub_model,
+            "execution_time": result.execution_time,
+            "usage_summary": usage_info,
             "status": "ok",
         }
     except Exception as e:
         error_str = str(e).lower()
         if "429" in error_str or "rate limit" in error_str or "quota" in error_str:
             return {
-                "response": "Kimi API rate limit reached. "
-                            "Please try again in a few minutes.",
+                "response": "Kimi API rate limit reached. Please try again in a few minutes.",
                 "status": "rate_limited",
             }
-        raise  # re-raise so main() can try fallback
+        raise
 
 
-def main():
-    parser = argparse.ArgumentParser(description="RLM Bridge for OpenClaw v4 (Kimi)")
+# === ASYNC MAIN ===
+
+async def main_async():
+    parser = argparse.ArgumentParser(description="RLM Bridge for OpenClaw v4.1 ASYNC")
     parser.add_argument("--query", required=True, help="User question")
     parser.add_argument("--workspace",
                         default=os.path.expanduser("~/.openclaw/workspace"),
                         help="OpenClaw workspace directory")
     parser.add_argument("--sessions-dir", default=None,
                         help="Sessions directory (auto-detected if not specified)")
-    # Models (Kimi defaults)
     parser.add_argument("--root-model", default=DEFAULT_ROOT_MODEL,
-                        help=f"Main model for Root LM (default: {DEFAULT_ROOT_MODEL})")
+                        help=f"Main model (default: {DEFAULT_ROOT_MODEL})")
     parser.add_argument("--sub-model", default=DEFAULT_SUB_MODEL,
-                        help=f"Cost-efficient model for Sub-LMs (default: {DEFAULT_SUB_MODEL})")
+                        help=f"Sub-LM model (default: {DEFAULT_SUB_MODEL})")
     parser.add_argument("--fallback-model", default=DEFAULT_FALLBACK_MODEL,
-                        help=f"Fallback model if primary fails (default: {DEFAULT_FALLBACK_MODEL})")
-    # Moonshot API
+                        help=f"Fallback model (default: {DEFAULT_FALLBACK_MODEL})")
     parser.add_argument("--base-url", default=MOONSHOT_API_URL,
-                        help=f"Moonshot API URL (default: {MOONSHOT_API_URL})")
+                        help=f"API URL (default: {MOONSHOT_API_URL})")
     parser.add_argument("--api-key", default=MOONSHOT_API_KEY,
-                        help="Moonshot API key (default: from MOONSHOT_API_KEY env var)")
-    # Options
+                        help="API key (default: from MOONSHOT_API_KEY env)")
     parser.add_argument("--max-sessions", type=int, default=MAX_SESSIONS_DEFAULT,
-                        help=f"Maximum sessions to load (default: {MAX_SESSIONS_DEFAULT})")
+                        help=f"Max sessions (default: {MAX_SESSIONS_DEFAULT})")
     parser.add_argument("--verbose", action="store_true",
-                        help="Enable detailed RLM output")
+                        help="Enable verbose RLM output")
     parser.add_argument("--log-dir", default=None,
-                        help="Directory for RLM logs (.jsonl)")
+                        help="Directory for RLM logs")
     args = parser.parse_args()
 
-    # Verify API key is set
     if not args.api_key:
         print(json.dumps({
-            "response": "Error: MOONSHOT_API_KEY environment variable not set. "
-                        "Get your key at https://platform.moonshot.ai/",
+            "response": "Error: MOONSHOT_API_KEY not set. Get key at https://platform.moonshot.ai/",
             "status": "error",
         }, ensure_ascii=False))
         sys.exit(1)
 
-    # Auto-detect sessions dir if not specified
     if args.sessions_dir is None:
         args.sessions_dir = find_sessions_dir()
 
-    # Load context
-    workspace_content = load_workspace(args.workspace)
-    sessions_content = load_sessions(args.sessions_dir, args.max_sessions)
+    # Load workspace (sync - fast)
+    start_total = time.time()
+    workspace_content = load_workspace_sync(args.workspace)
+    
+    # Load sessions (async - optimized) 🚀
+    sessions_content = await load_sessions_parallel(args.sessions_dir, args.max_sessions)
+    
     full_context = f"{workspace_content}\n\n{'='*60}\n\n{sessions_content}"
     context_chars = len(full_context)
 
-    # Verify sufficient context exists
+    load_time = time.time() - start_total
+    print(f"[Async] Total loading time: {load_time:.2f}s", file=sys.stderr)
+
     if context_chars < 100:
         print(json.dumps({
             "response": "Not enough history to analyze.",
@@ -363,7 +373,7 @@ def main():
         }, ensure_ascii=False))
         return
 
-    # Try: primary -> fallback
+    # Run RLM (sync - inherently sequential)
     try:
         result = run_rlm(
             args.query, full_context,
@@ -388,8 +398,14 @@ def main():
 
     result["context_chars"] = context_chars
     result["sessions_dir"] = args.sessions_dir
+    result["load_time_seconds"] = load_time
     result.setdefault("status", "ok")
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def main():
+    """Entry point - runs async main."""
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":
