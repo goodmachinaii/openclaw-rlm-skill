@@ -398,7 +398,10 @@ async def process_session_file(
         branch_id = str(meta.get("branchId") or meta.get("branch_id") or "").strip()
         parent_id = str(meta.get("parentId") or meta.get("parent_id") or "").strip()
         title = str(meta.get("title") or "").strip()
-        date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        try:
+            date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        except (ValueError, OSError):
+            date_str = "unknown-date"
         session_name = filepath.stem
         header = f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt}"
         if title:
@@ -466,7 +469,10 @@ def load_sessions(
             branch_id = str(meta.get("branchId") or meta.get("branch_id") or "").strip()
             parent_id = str(meta.get("parentId") or meta.get("parent_id") or "").strip()
             title = str(meta.get("title") or "").strip()
-            date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+            try:
+                date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+            except (ValueError, OSError):
+                date_str = "unknown-date"
             session_name = filepath.stem
             header = f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt}"
             if title:
