@@ -709,8 +709,6 @@ def run_rlm(
     verbose: bool = False,
     log_dir: str | None = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
-    compaction: bool = False,
-    compaction_threshold: float = 0.85,
     request_timeout: float = 120.0,
     max_retries: int = 1,
     retry_backoff_seconds: float = 2.0,
@@ -736,8 +734,6 @@ def run_rlm(
             "max_iterations": max_iterations,
             "max_depth": 1,
             "verbose": verbose,
-            "compaction": compaction,
-            "compaction_threshold_pct": compaction_threshold,
         }
 
         if sub_model and sub_model != root_model:
@@ -997,8 +993,6 @@ async def main_async():
                 verbose=args.verbose,
                 log_dir=args.log_dir,
                 max_iterations=max_iterations,
-                compaction=compaction,
-                compaction_threshold=compaction_threshold,
                 request_timeout=args.request_timeout,
                 max_retries=max(0, args.max_retries),
                 retry_backoff_seconds=max(0.0, args.retry_backoff_seconds),
@@ -1015,8 +1009,6 @@ async def main_async():
                     verbose=args.verbose,
                     log_dir=args.log_dir,
                     max_iterations=max_iterations,
-                    compaction=compaction,
-                    compaction_threshold=compaction_threshold,
                     request_timeout=args.request_timeout,
                     max_retries=max(0, args.max_retries),
                     retry_backoff_seconds=max(0.0, args.retry_backoff_seconds),
