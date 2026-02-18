@@ -253,6 +253,38 @@ class TestLoadSessions:
         assert "BRANCH:branch-map" in result
         assert "PARENT:parent-map" in result
 
+    def test_load_sessions_handles_overflow_timestamp_from_index(self, tmp_path):
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+
+        (sessions_dir / "sessions.json").write_text(
+            json.dumps(
+                {
+                    "sessions": [
+                        {
+                            "id": "session_overflow",
+                            "updatedAt": "1e20",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        payload = {
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "o" * 120}],
+            }
+        }
+        (sessions_dir / "session_overflow.jsonl").write_text(
+            json.dumps(payload) + "\n",
+            encoding="utf-8",
+        )
+
+        result = load_sessions(str(sessions_dir), max_sessions=5, max_chars=10_000)
+        assert "DATE:unknown-date" in result
+
 
 class TestWorkspaceAndAgentResolution:
     def test_load_workspace_accepts_lowercase_memory(self, tmp_path):

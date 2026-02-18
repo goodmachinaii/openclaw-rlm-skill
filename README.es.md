@@ -128,7 +128,7 @@ La estimación de costo del bridge es conservadora para input cuando no hay deta
 El paquete correcto es `rlms`:
 
 ```bash
-uv pip install rlms
+uv pip install "rlms>=0.1.0,<0.2.0"
 ```
 
 ## Tests

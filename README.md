@@ -129,7 +129,7 @@ Bridge cost estimate is conservative for input tokens when cache-hit details are
 The Python package is `rlms`:
 
 ```bash
-uv pip install rlms
+uv pip install "rlms>=0.1.0,<0.2.0"
 ```
 
 ## Tests

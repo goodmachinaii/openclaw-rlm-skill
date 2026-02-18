@@ -69,8 +69,11 @@ class TestRunRlmModels:
         assert "other_backends" not in kwargs
         assert "other_backend_kwargs" not in kwargs
 
+    @patch("rlm_bridge._get_rlm_init_kwargs", return_value={"compaction", "compaction_threshold_pct"})
     @patch("rlm_bridge._create_rlm")
-    def test_max_iterations_and_compaction_configuration(self, mock_create_rlm):
+    def test_max_iterations_and_compaction_configuration(
+        self, mock_create_rlm, _mock_supported_kwargs
+    ):
         mock_rlm = MagicMock()
         mock_rlm.completion.return_value = _mock_result()
         mock_create_rlm.return_value = mock_rlm
@@ -92,6 +95,30 @@ class TestRunRlmModels:
         assert kwargs["compaction"] is True
         assert kwargs["compaction_threshold_pct"] == 0.75
         assert kwargs["max_depth"] == 1
+
+    @patch("rlm_bridge._get_rlm_init_kwargs", return_value=set())
+    @patch("rlm_bridge._create_rlm")
+    def test_compaction_is_skipped_when_rlm_does_not_support_it(
+        self, mock_create_rlm, _mock_supported_kwargs
+    ):
+        mock_rlm = MagicMock()
+        mock_rlm.completion.return_value = _mock_result()
+        mock_create_rlm.return_value = mock_rlm
+
+        run_rlm(
+            query="Question",
+            context="Context",
+            root_model="kimi-k2.5",
+            sub_model="kimi-k2.5",
+            base_url="https://api.moonshot.ai/v1",
+            api_key="test-key",
+            compaction=True,
+            compaction_threshold=0.75,
+        )
+
+        kwargs = mock_create_rlm.call_args.kwargs
+        assert "compaction" not in kwargs
+        assert "compaction_threshold_pct" not in kwargs
 
     @patch("rlm_bridge._create_rlm")
     def test_request_timeout_in_backend_kwargs(self, mock_create_rlm):
@@ -150,6 +177,34 @@ class TestRunRlmModels:
         completion_kwargs = mock_rlm.completion.call_args.kwargs
         assert completion_kwargs["prompt"] == chunked_context
         assert result["response"] == "Chunked analysis"
+
+    @patch("rlm_bridge._create_rlm")
+    def test_retries_when_repl_final_var_error_is_returned(self, mock_create_rlm):
+        first = MagicMock()
+        first.completion.return_value = _mock_result(
+            response=(
+                "Error: Variable 'respuesta_texto' not found. Available variables: ['a']. "
+                "You must create and assign a variable BEFORE calling FINAL_VAR on it."
+            )
+        )
+        second = MagicMock()
+        second.completion.return_value = _mock_result(response="Recovered final answer")
+        mock_create_rlm.side_effect = [first, second]
+
+        result = run_rlm(
+            query="Analyze",
+            context="Data",
+            root_model="kimi-k2.5",
+            sub_model="kimi-k2.5",
+            base_url="https://api.moonshot.ai/v1",
+            api_key="test-key",
+            max_retries=1,
+            retry_backoff_seconds=0.0,
+        )
+
+        assert result["status"] == "ok"
+        assert result["response"] == "Recovered final answer"
+        assert result["attempts"] == 2
 
 
 if __name__ == "__main__":

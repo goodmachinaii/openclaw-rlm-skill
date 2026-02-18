@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import inspect
 import json
 import os
 import sys
@@ -87,6 +88,8 @@ MODEL_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
     "kimi-k2-turbo": {"prompt": 1.15, "completion": 8.00, "caching": 0.15},
     "kimi-k2-thinking-turbo": {"prompt": 1.15, "completion": 8.00, "caching": 0.15},
 }
+
+_RLM_INIT_KWARGS_CACHE: set[str] | None = None
 
 
 def _resolve_openclaw_home_from_sessions_dir(sessions_dir: str | Path) -> Path | None:
@@ -400,7 +403,7 @@ async def process_session_file(
         title = str(meta.get("title") or "").strip()
         try:
             date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
-        except (ValueError, OSError):
+        except (ValueError, OSError, OverflowError):
             date_str = "unknown-date"
         session_name = filepath.stem
         header = f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt}"
@@ -471,7 +474,7 @@ def load_sessions(
             title = str(meta.get("title") or "").strip()
             try:
                 date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
-            except (ValueError, OSError):
+            except (ValueError, OSError, OverflowError):
                 date_str = "unknown-date"
             session_name = filepath.stem
             header = f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt}"
@@ -586,6 +589,22 @@ def _create_rlm(**kwargs):
     return RLM(**kwargs)
 
 
+def _get_rlm_init_kwargs() -> set[str]:
+    """Return supported kwargs in RLM.__init__ for cross-version compatibility."""
+    global _RLM_INIT_KWARGS_CACHE  # noqa: PLW0603
+    if _RLM_INIT_KWARGS_CACHE is not None:
+        return _RLM_INIT_KWARGS_CACHE
+
+    try:
+        from rlm import RLM
+
+        _RLM_INIT_KWARGS_CACHE = set(inspect.signature(RLM.__init__).parameters.keys())
+    except Exception:
+        _RLM_INIT_KWARGS_CACHE = set()
+
+    return _RLM_INIT_KWARGS_CACHE
+
+
 def _is_rate_limited_error(error_text: str) -> bool:
     return "429" in error_text or "rate limit" in error_text or "quota" in error_text
 
@@ -602,6 +621,23 @@ def _is_retryable_error(error_text: str) -> bool:
         "504",
     )
     return any(marker in error_text for marker in retryable_markers)
+
+
+def _is_repl_finalization_error(response_text: str) -> bool:
+    lowered = response_text.lower()
+    markers = (
+        "not found. available variables:",
+        "you must create and assign a variable before calling final_var",
+    )
+    return all(marker in lowered for marker in markers)
+
+
+def _looks_like_incomplete_repl_output(response_text: str) -> bool:
+    stripped = response_text.strip().lower()
+    if not stripped.startswith("```repl"):
+        return False
+    # A raw repl block in final output usually indicates the model did not finalize.
+    return "final(" not in stripped and "final_var(" not in stripped
 
 
 def _extract_usage_summary(result_obj) -> dict:
@@ -701,7 +737,7 @@ def estimate_usage_cost(usage_summary: dict) -> dict:
 
 def run_rlm(
     query: str,
-    context: str | list[str],
+    context: str | dict[str, Any] | list[str] | list[dict[str, Any]],
     root_model: str,
     sub_model: str,
     base_url: str,
@@ -709,6 +745,8 @@ def run_rlm(
     verbose: bool = False,
     log_dir: str | None = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    compaction: bool = False,
+    compaction_threshold: float = 0.85,
     request_timeout: float = 120.0,
     max_retries: int = 1,
     retry_backoff_seconds: float = 2.0,
@@ -735,6 +773,11 @@ def run_rlm(
             "max_depth": 1,
             "verbose": verbose,
         }
+        init_kwargs = _get_rlm_init_kwargs()
+        if "compaction" in init_kwargs:
+            rlm_kwargs["compaction"] = compaction
+        if "compaction_threshold_pct" in init_kwargs:
+            rlm_kwargs["compaction_threshold_pct"] = compaction_threshold
 
         if sub_model and sub_model != root_model:
             other_backend_kwargs = {
@@ -757,11 +800,34 @@ def run_rlm(
 
         try:
             result = rlm.completion(prompt=context, root_prompt=query)
+            response_text = str(getattr(result, "response", ""))
+            if _is_repl_finalization_error(response_text):
+                semantic_error = (
+                    "RLM returned FINAL_VAR validation error; no final answer was produced."
+                )
+                can_retry_semantic = attempt <= max_retries
+                if can_retry_semantic:
+                    sleep_seconds = retry_backoff_seconds * attempt
+                    print(f"[RLM] {semantic_error} Retrying in {sleep_seconds:.1f}s...", file=sys.stderr)
+                    time.sleep(sleep_seconds)
+                    continue
+                raise RuntimeError(semantic_error)
+
+            if _looks_like_incomplete_repl_output(response_text):
+                incomplete_error = "RLM returned raw repl output without FINAL answer."
+                can_retry_semantic = attempt <= max_retries
+                if can_retry_semantic:
+                    sleep_seconds = retry_backoff_seconds * attempt
+                    print(f"[RLM] {incomplete_error} Retrying in {sleep_seconds:.1f}s...", file=sys.stderr)
+                    time.sleep(sleep_seconds)
+                    continue
+                raise RuntimeError(incomplete_error)
+
             usage_info = _extract_usage_summary(result)
             cost_estimate = estimate_usage_cost(usage_info)
 
             return {
-                "response": result.response,
+                "response": response_text,
                 "model_used": root_model,
                 "sub_model_used": sub_model,
                 "execution_time": getattr(result, "execution_time", None),
@@ -772,6 +838,13 @@ def run_rlm(
             }
         except Exception as error:
             error_text = str(error).lower()
+            if isinstance(context, list) and "prompt" in error_text and "list" in error_text:
+                # Backward compatibility: old rlms builds may reject list prompt payloads.
+                context = "\n\n".join(str(item) for item in context)
+                can_retry_prompt = attempt <= max_retries
+                if can_retry_prompt:
+                    continue
+
             if _is_rate_limited_error(error_text):
                 return {
                     "response": "Kimi API rate limit reached. Please try again in a few minutes.",
@@ -993,6 +1066,8 @@ async def main_async():
                 verbose=args.verbose,
                 log_dir=args.log_dir,
                 max_iterations=max_iterations,
+                compaction=compaction,
+                compaction_threshold=compaction_threshold,
                 request_timeout=args.request_timeout,
                 max_retries=max(0, args.max_retries),
                 retry_backoff_seconds=max(0.0, args.retry_backoff_seconds),
@@ -1009,6 +1084,8 @@ async def main_async():
                     verbose=args.verbose,
                     log_dir=args.log_dir,
                     max_iterations=max_iterations,
+                    compaction=compaction,
+                    compaction_threshold=compaction_threshold,
                     request_timeout=args.request_timeout,
                     max_retries=max(0, args.max_retries),
                     retry_backoff_seconds=max(0.0, args.retry_backoff_seconds),

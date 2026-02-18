@@ -42,7 +42,7 @@ uv venv --python 3.12 2>/dev/null || uv venv
 
 echo ""
 echo "Installing rlms..."
-uv pip install rlms
+uv pip install "rlms>=0.1.0,<0.2.0"
 
 echo ""
 echo "Installation complete!"

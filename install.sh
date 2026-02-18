@@ -54,7 +54,7 @@ echo "[4/5] Installing Python dependencies (rlms)..."
 
 cd "$(dirname "$0")"
 uv venv --python 3.12 2>/dev/null || uv venv
-uv pip install rlms
+uv pip install "rlms>=0.1.0,<0.2.0"
 echo "  - rlms: OK"
 
 # 5. Deploy skill to OpenClaw

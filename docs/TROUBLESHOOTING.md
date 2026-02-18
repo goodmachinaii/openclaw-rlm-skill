@@ -76,7 +76,7 @@ uv run python src/rlm_bridge.py \
 Use `rlms` package name:
 
 ```bash
-uv pip install rlms
+uv pip install "rlms>=0.1.0,<0.2.0"
 ```
 
 ## Debugging Aids
