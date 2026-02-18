@@ -11,7 +11,14 @@ import pytest
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from rlm_bridge import load_sessions, parse_jsonl_session, parse_jsonl_session_content
+from rlm_bridge import (
+    build_context_payload,
+    find_sessions_dir,
+    load_sessions,
+    load_workspace_sync,
+    parse_jsonl_session,
+    parse_jsonl_session_content,
+)
 
 
 class TestParseJsonlSession:
@@ -83,6 +90,29 @@ class TestParseJsonlSession:
 
         assert "[user]: This is a test message" in parsed
 
+    def test_parse_jsonl_includes_compaction_and_branch_summary(self):
+        raw = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "compaction",
+                        "summary": "Resumen de memoria compactada",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "branch_summary",
+                        "content": {"text": "Resumen de rama activa"},
+                    }
+                ),
+            ]
+        )
+
+        parsed = parse_jsonl_session_content(raw)
+
+        assert "[memory-summary]: Resumen de memoria compactada" in parsed
+        assert "[memory-summary]: Resumen de rama activa" in parsed
+
 
 class TestLoadSessions:
     def test_load_sessions_nonexistent_directory(self, tmp_path):
@@ -150,6 +180,110 @@ class TestLoadSessions:
 
         assert "SESSION:real_session" in result
         assert "SESSION:sessions" not in result
+
+    def test_load_sessions_uses_sessions_index_metadata(self, tmp_path):
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+
+        (sessions_dir / "sessions.json").write_text(
+            json.dumps(
+                {
+                    "sessions": [
+                        {
+                            "id": "session_meta",
+                            "title": "Plan semanal",
+                            "branchId": "branch-a",
+                            "parentId": "root-1",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        payload = {
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "z" * 120}],
+            }
+        }
+        (sessions_dir / "session_meta.jsonl").write_text(
+            json.dumps(payload) + "\n",
+            encoding="utf-8",
+        )
+
+        result = load_sessions(str(sessions_dir), max_sessions=5, max_chars=10_000)
+
+        assert "TITLE:Plan semanal" in result
+        assert "BRANCH:branch-a" in result
+        assert "PARENT:root-1" in result
+
+    def test_load_sessions_uses_map_style_sessions_index_metadata(self, tmp_path):
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+
+        (sessions_dir / "sessions.json").write_text(
+            json.dumps(
+                {
+                    "sessionKeyA": {
+                        "sessionId": "session_map",
+                        "title": "Mapa oficial",
+                        "branchId": "branch-map",
+                        "parentId": "parent-map",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        payload = {
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "m" * 120}],
+            }
+        }
+        (sessions_dir / "session_map.jsonl").write_text(
+            json.dumps(payload) + "\n",
+            encoding="utf-8",
+        )
+
+        result = load_sessions(str(sessions_dir), max_sessions=5, max_chars=10_000)
+
+        assert "TITLE:Mapa oficial" in result
+        assert "BRANCH:branch-map" in result
+        assert "PARENT:parent-map" in result
+
+
+class TestWorkspaceAndAgentResolution:
+    def test_load_workspace_accepts_lowercase_memory(self, tmp_path):
+        (tmp_path / "memory.md").write_text("lower memory", encoding="utf-8")
+        result = load_workspace_sync(str(tmp_path))
+        assert "=== MEMORY.md ===" in result
+        assert "lower memory" in result
+
+    def test_find_sessions_dir_prefers_explicit_agent_id(self, tmp_path):
+        agents_dir = tmp_path / "agents"
+        (agents_dir / "active-a" / "sessions").mkdir(parents=True)
+        (agents_dir / "active-a" / "sessions" / "s1.jsonl").write_text("{}", encoding="utf-8")
+        (agents_dir / "other-b" / "sessions").mkdir(parents=True)
+        (agents_dir / "other-b" / "sessions" / "s2.jsonl").write_text("{}", encoding="utf-8")
+
+        resolved = find_sessions_dir(str(tmp_path), agent_id="active-a")
+        assert resolved.endswith("active-a/sessions")
+
+
+class TestContextChunking:
+    def test_chunks_mode_skips_sentinel_no_sessions_marker(self):
+        payload, fmt = build_context_payload(
+            workspace_content="workspace",
+            sessions_content="[No sessions available]",
+            context_format="chunks",
+            pi_profile_name="off",
+        )
+        assert fmt == "chunks"
+        assert isinstance(payload, list)
+        assert len(payload) == 1
+        assert payload[0].startswith("=== WORKSPACE ===")
 
 
 if __name__ == "__main__":

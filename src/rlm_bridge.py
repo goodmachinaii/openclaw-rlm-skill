@@ -19,6 +19,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 # Async file I/O
 try:
@@ -88,12 +89,150 @@ MODEL_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
 }
 
 
-def find_sessions_dir(openclaw_home: str = "~/.openclaw") -> str:
+def _resolve_openclaw_home_from_sessions_dir(sessions_dir: str | Path) -> Path | None:
+    path = Path(sessions_dir).expanduser().resolve()
+    parts = list(path.parts)
+    if ".openclaw" in parts:
+        idx = parts.index(".openclaw")
+        return Path(*parts[: idx + 1])
+    return None
+
+
+def _extract_agent_id_from_payload(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    for key in ("agentId", "agent_id", "id", "currentAgentId", "activeAgentId"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    nested = payload.get("agent")
+    if isinstance(nested, dict):
+        return _extract_agent_id_from_payload(nested)
+    return None
+
+
+def _discover_active_agent_id(openclaw_home: str = "~/.openclaw") -> str | None:
+    explicit = os.environ.get("OPENCLAW_AGENT_ID", "").strip()
+    if explicit:
+        return explicit
+
+    home = Path(openclaw_home).expanduser()
+    candidates = [
+        home / "active-agent.json",
+        home / "runtime" / "active-agent.json",
+        home / "state" / "active-agent.json",
+    ]
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8", errors="ignore"))
+            found = _extract_agent_id_from_payload(payload)
+            if found:
+                return found
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    return None
+
+
+def _safe_text_from_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("text", "summary", "content", "message"):
+            raw = value.get(key)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+    return ""
+
+
+def _parse_timestamp_like(value: Any) -> float | None:
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+        try:
+            normalized = raw.replace("Z", "+00:00")
+            return datetime.fromisoformat(normalized).timestamp()
+        except ValueError:
+            return None
+
+    return None
+
+
+def _load_sessions_index_map(sessions_dir: str) -> dict[str, dict[str, Any]]:
+    index_path = Path(sessions_dir) / "sessions.json"
+    if not index_path.exists():
+        return {}
+
+    try:
+        payload = json.loads(index_path.read_text(encoding="utf-8", errors="ignore"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    out: dict[str, dict[str, Any]] = {}
+
+    # Format A: {"sessions": [...]} or {"items": [...]}.
+    if isinstance(payload, dict):
+        list_entries = payload.get("sessions", payload.get("items"))
+        if isinstance(list_entries, list):
+            for item in list_entries:
+                if not isinstance(item, dict):
+                    continue
+                session_id = str(
+                    item.get("id") or item.get("sessionId") or item.get("uuid") or ""
+                ).strip()
+                if session_id:
+                    out[session_id] = item
+
+        # Format B (current in OpenClaw docs): map sessionKey -> sessionEntry.
+        for value in payload.values():
+            if not isinstance(value, dict):
+                continue
+            session_id = str(value.get("sessionId") or value.get("id") or "").strip()
+            if session_id and session_id not in out:
+                out[session_id] = value
+
+    # Format C: raw list.
+    elif isinstance(payload, list):
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            session_id = str(item.get("id") or item.get("sessionId") or item.get("uuid") or "").strip()
+            if session_id:
+                out[session_id] = item
+
+    return out
+
+
+def find_sessions_dir(openclaw_home: str = "~/.openclaw", agent_id: str | None = None) -> str:
     """Auto-detect where OpenClaw stores sessions."""
     home = Path(openclaw_home).expanduser()
     agents_dir = home / "agents"
+    preferred_agent_raw = agent_id or _discover_active_agent_id(openclaw_home)
+    preferred_agent = preferred_agent_raw.strip() if isinstance(preferred_agent_raw, str) else ""
     if agents_dir.exists():
-        for agent_dir in sorted(agents_dir.iterdir()):
+        ordered_dirs: list[Path] = []
+        if preferred_agent:
+            ordered_dirs.append(agents_dir / preferred_agent)
+        ordered_dirs.extend(sorted(agents_dir.iterdir()))
+
+        seen: set[Path] = set()
+        for agent_dir in ordered_dirs:
+            if agent_dir in seen or not agent_dir.exists():
+                continue
+            seen.add(agent_dir)
             sessions_dir = agent_dir / "sessions"
             if sessions_dir.exists():
                 jsonl_files = list(sessions_dir.glob("*.jsonl"))
@@ -108,7 +247,7 @@ def find_sessions_dir(openclaw_home: str = "~/.openclaw") -> str:
 
 
 def parse_jsonl_session_content(raw_content: str) -> str:
-    """Parse JSONL content to readable text."""
+    """Parse OpenClaw JSONL content to readable text."""
     lines: list[str] = []
     for raw_line in raw_content.strip().split("\n"):
         raw_line = raw_line.strip()
@@ -118,6 +257,17 @@ def parse_jsonl_session_content(raw_content: str) -> str:
         try:
             entry = json.loads(raw_line)
         except json.JSONDecodeError:
+            continue
+
+        entry_type = str(entry.get("type") or "").strip().lower()
+        if entry_type in ("compaction", "branch_summary"):
+            summary_text = (
+                _safe_text_from_value(entry.get("summary"))
+                or _safe_text_from_value(entry.get("content"))
+                or _safe_text_from_value(entry.get("message"))
+            )
+            if summary_text:
+                lines.append(f"[memory-summary]: {summary_text}")
             continue
 
         msg = entry.get("message", {})
@@ -156,13 +306,22 @@ def _collect_session_files(sessions_dir: str, max_sessions: int) -> list[tuple[f
     if not sessions.exists():
         return []
 
+    index_map = _load_sessions_index_map(sessions_dir)
     session_files: list[tuple[float, Path, str]] = []
 
     for p in sessions.glob("*.jsonl"):
         if p.name == "sessions.json":
             continue
         try:
-            session_files.append((p.stat().st_mtime, p, "jsonl"))
+            mtime = p.stat().st_mtime
+            meta = index_map.get(p.stem, {})
+            indexed_ts = _parse_timestamp_like(
+                meta.get("updatedAt")
+                or meta.get("lastMessageAt")
+                or meta.get("timestamp")
+                or meta.get("createdAt")
+            )
+            session_files.append((indexed_ts if indexed_ts is not None else mtime, p, "jsonl"))
         except OSError:
             continue
 
@@ -217,7 +376,12 @@ async def read_file_async(filepath: Path) -> str:
         return await f.read()
 
 
-async def process_session_file(filepath: Path, mtime: float, fmt: str) -> str | None:
+async def process_session_file(
+    filepath: Path,
+    mtime: float,
+    fmt: str,
+    index_map: dict[str, dict[str, Any]] | None = None,
+) -> str | None:
     """Process one session file and return formatted text or None."""
     try:
         if fmt == "jsonl":
@@ -229,9 +393,22 @@ async def process_session_file(filepath: Path, mtime: float, fmt: str) -> str | 
         if len(content.strip()) < 50:
             return None
 
+        map_for_file = index_map if isinstance(index_map, dict) else {}
+        meta = map_for_file.get(filepath.stem, {}) if fmt == "jsonl" else {}
+        branch_id = str(meta.get("branchId") or meta.get("branch_id") or "").strip()
+        parent_id = str(meta.get("parentId") or meta.get("parent_id") or "").strip()
+        title = str(meta.get("title") or "").strip()
         date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
         session_name = filepath.stem
-        return f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt} ===\n{content}"
+        header = f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt}"
+        if title:
+            header += f" TITLE:{title[:120]}"
+        if branch_id:
+            header += f" BRANCH:{branch_id}"
+        if parent_id:
+            header += f" PARENT:{parent_id}"
+        header += " ==="
+        return f"{header}\n{content}"
     except (PermissionError, UnicodeDecodeError, OSError):
         return None
 
@@ -247,7 +424,11 @@ async def load_sessions_parallel(
     if not session_files:
         return "[No sessions available]"
 
-    tasks = [process_session_file(filepath, mtime, fmt) for mtime, filepath, fmt in session_files]
+    index_map = _load_sessions_index_map(sessions_dir)
+    tasks = [
+        process_session_file(filepath, mtime, fmt, index_map=index_map)
+        for mtime, filepath, fmt in session_files
+    ]
     results = await asyncio.gather(*tasks)
     parts = [item for item in results if item]
 
@@ -270,6 +451,7 @@ def load_sessions(
         return "[No sessions available]"
 
     parts: list[str] = []
+    index_map = _load_sessions_index_map(sessions_dir)
     for mtime, filepath, fmt in session_files:
         try:
             if fmt == "jsonl":
@@ -280,36 +462,97 @@ def load_sessions(
             if len(content.strip()) < 50:
                 continue
 
+            meta = index_map.get(filepath.stem, {}) if fmt == "jsonl" else {}
+            branch_id = str(meta.get("branchId") or meta.get("branch_id") or "").strip()
+            parent_id = str(meta.get("parentId") or meta.get("parent_id") or "").strip()
+            title = str(meta.get("title") or "").strip()
             date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
             session_name = filepath.stem
-            parts.append(f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt} ===\n{content}")
+            header = f"=== SESSION:{session_name} DATE:{date_str} FMT:{fmt}"
+            if title:
+                header += f" TITLE:{title[:120]}"
+            if branch_id:
+                header += f" BRANCH:{branch_id}"
+            if parent_id:
+                header += f" PARENT:{parent_id}"
+            header += " ==="
+            parts.append(f"{header}\n{content}")
         except (PermissionError, UnicodeDecodeError, OSError):
             continue
 
     return _assemble_session_parts(parts, max_chars)
 
 
+def build_context_payload(
+    workspace_content: str,
+    sessions_content: str,
+    context_format: str,
+    pi_profile_name: str,
+) -> tuple[str | list[str], str]:
+    full_context = f"{workspace_content}\n\n{'=' * 60}\n\n{sessions_content}"
+    sessions_available = sessions_content.strip() not in (
+        "",
+        "[No sessions available]",
+        "[No sessions loaded]",
+    )
+    if context_format == "auto":
+        context_chars = len(full_context)
+        # On constrained devices, list chunks reduce single-prompt overload.
+        if pi_profile_name != "off" or context_chars >= 120_000:
+            context_format = "chunks"
+        else:
+            context_format = "string"
+
+    if context_format == "chunks":
+        chunks: list[str] = []
+        if workspace_content.strip():
+            chunks.append(f"=== WORKSPACE ===\n{workspace_content}")
+        if sessions_available:
+            for block in sessions_content.split("\n\n=== SESSION:"):
+                block = block.strip()
+                if not block:
+                    continue
+                if block.startswith("=== SESSION:"):
+                    chunks.append(block)
+                else:
+                    chunks.append(f"=== SESSION:{block}")
+        return (chunks if chunks else [full_context]), context_format
+
+    return full_context, "string"
+
+
 def load_workspace_sync(workspace_dir: str, daily_chars_limit: int = 200_000) -> str:
     """Load workspace files (sync)."""
     workspace = Path(workspace_dir)
     parts: list[str] = []
+    seen_paths: set[Path] = set()
 
-    for filename in [
-        "MEMORY.md",
-        "SOUL.md",
-        "AGENTS.md",
-        "USER.md",
-        "IDENTITY.md",
-        "TOOLS.md",
-    ]:
-        filepath = workspace / filename
-        if filepath.exists():
-            try:
-                content = filepath.read_text(encoding="utf-8", errors="ignore")
-                if content.strip() and len(content) < 50_000:
-                    parts.append(f"=== {filename} ===\n{content}")
-            except (PermissionError, OSError) as error:
-                parts.append(f"=== {filename} === [Error: {error}]")
+    workspace_file_aliases = [
+        ("MEMORY.md", ("MEMORY.md", "memory.md")),
+        ("SOUL.md", ("SOUL.md",)),
+        ("AGENTS.md", ("AGENTS.md",)),
+        ("USER.md", ("USER.md",)),
+        ("IDENTITY.md", ("IDENTITY.md",)),
+        ("TOOLS.md", ("TOOLS.md",)),
+    ]
+
+    for display_name, aliases in workspace_file_aliases:
+        filepath = None
+        for name in aliases:
+            candidate = workspace / name
+            if candidate.exists():
+                filepath = candidate.resolve()
+                break
+        if filepath is None or filepath in seen_paths:
+            continue
+        seen_paths.add(filepath)
+
+        try:
+            content = filepath.read_text(encoding="utf-8", errors="ignore")
+            if content.strip() and len(content) < 50_000:
+                parts.append(f"=== {display_name} ===\n{content}")
+        except (PermissionError, OSError) as error:
+            parts.append(f"=== {display_name} === [Error: {error}]")
 
     memory_dir = workspace / "memory"
     if memory_dir.exists():
@@ -452,7 +695,7 @@ def estimate_usage_cost(usage_summary: dict) -> dict:
 
 def run_rlm(
     query: str,
-    context: str,
+    context: str | list[str],
     root_model: str,
     sub_model: str,
     base_url: str,
@@ -564,6 +807,11 @@ async def main_async():
         default=None,
         help="Sessions directory (auto-detected if not specified)",
     )
+    parser.add_argument(
+        "--agent-id",
+        default=None,
+        help="OpenClaw agent id to resolve sessions directory deterministically",
+    )
 
     parser.add_argument(
         "--profile-model",
@@ -599,6 +847,12 @@ async def main_async():
         type=int,
         default=None,
         help=f"Max RLM iterations (default: {DEFAULT_MAX_ITERATIONS})",
+    )
+    parser.add_argument(
+        "--context-format",
+        choices=["auto", "string", "chunks"],
+        default="auto",
+        help="How to pass context to RLM (default: auto)",
     )
 
     parser.add_argument("--compaction", dest="compaction", action="store_true")
@@ -678,7 +932,11 @@ async def main_async():
         compaction_threshold = 0.85
 
     if args.sessions_dir is None:
-        args.sessions_dir = find_sessions_dir()
+        args.sessions_dir = find_sessions_dir(agent_id=args.agent_id)
+    openclaw_home = _resolve_openclaw_home_from_sessions_dir(args.sessions_dir)
+    active_agent_id = args.agent_id or (
+        _discover_active_agent_id(str(openclaw_home)) if openclaw_home else None
+    )
 
     total_start = time.perf_counter()
 
@@ -694,7 +952,18 @@ async def main_async():
     )
     sessions_time = time.perf_counter() - sessions_start
 
-    full_context = f"{workspace_content}\n\n{'=' * 60}\n\n{sessions_content}"
+    context_payload, resolved_context_format = build_context_payload(
+        workspace_content=workspace_content,
+        sessions_content=sessions_content,
+        context_format=args.context_format,
+        pi_profile_name=args.pi_profile,
+    )
+    if isinstance(context_payload, list):
+        full_context = "\n\n".join(context_payload)
+        context_chunk_count = len(context_payload)
+    else:
+        full_context = context_payload
+        context_chunk_count = 1
     context_chars = len(full_context)
 
     load_time = workspace_time + sessions_time
@@ -714,7 +983,7 @@ async def main_async():
         try:
             result = run_rlm(
                 query=args.query,
-                context=full_context,
+                context=context_payload,
                 root_model=root_model,
                 sub_model=sub_model,
                 base_url=args.base_url,
@@ -732,7 +1001,7 @@ async def main_async():
             try:
                 result = run_rlm(
                     query=args.query,
-                    context=full_context,
+                    context=context_payload,
                     root_model=fallback_model,
                     sub_model=fallback_model,
                     base_url=args.base_url,
@@ -759,6 +1028,7 @@ async def main_async():
     total_time = time.perf_counter() - total_start
 
     result["context_chars"] = context_chars
+    result["context_chunks"] = context_chunk_count
     result["sessions_dir"] = args.sessions_dir
     result["workspace_dir"] = args.workspace
     result["timings"] = {
@@ -776,12 +1046,14 @@ async def main_async():
         "max_sessions": max_sessions,
         "max_context_chars": max_context_chars,
         "max_iterations": max_iterations,
+        "context_format": resolved_context_format,
         "compaction": compaction,
         "compaction_threshold": compaction_threshold,
         "request_timeout": args.request_timeout,
         "max_retries": max(0, args.max_retries),
         "retry_backoff_seconds": max(0.0, args.retry_backoff_seconds),
         "api_base_url": args.base_url,
+        "agent_id": active_agent_id,
     }
     result.setdefault("status", "ok")
 

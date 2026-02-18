@@ -131,6 +131,26 @@ class TestRunRlmModels:
         assert result["response"] == "Analysis complete"
         assert result["cost_estimate"]["total_estimated_usd"] > 0
 
+    @patch("rlm_bridge._create_rlm")
+    def test_accepts_list_context_payload(self, mock_create_rlm):
+        mock_rlm = MagicMock()
+        mock_rlm.completion.return_value = _mock_result(response="Chunked analysis")
+        mock_create_rlm.return_value = mock_rlm
+
+        chunked_context = ["=== WORKSPACE ===\nA", "=== SESSION:abc ===\nB"]
+        result = run_rlm(
+            query="Analyze",
+            context=chunked_context,
+            root_model="kimi-k2.5",
+            sub_model="kimi-k2.5",
+            base_url="https://api.moonshot.ai/v1",
+            api_key="test-key",
+        )
+
+        completion_kwargs = mock_rlm.completion.call_args.kwargs
+        assert completion_kwargs["prompt"] == chunked_context
+        assert result["response"] == "Chunked analysis"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

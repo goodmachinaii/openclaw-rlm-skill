@@ -94,12 +94,14 @@ uv run python src/rlm_bridge.py \
 - `--max-sessions`
 - `--max-context-chars`
 - `--max-iterations`
+- `--context-format auto|string|chunks`
 - `--compaction` / `--no-compaction`
 - `--compaction-threshold`
 - `--request-timeout`
 - `--max-retries`
 - `--retry-backoff-seconds`
 - `--log-dir`
+- `--agent-id`
 
 ## Precios (USD por 1M tokens)
 

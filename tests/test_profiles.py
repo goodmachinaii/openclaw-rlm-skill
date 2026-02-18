@@ -55,11 +55,13 @@ def test_speed_and_pi_profiles_are_applied(
     assert call_kwargs["sub_model"] == "kimi-k2-turbo-preview"
     assert call_kwargs["max_iterations"] == 4
     assert call_kwargs["compaction"] is True
+    assert isinstance(call_kwargs["context"], list)
 
     resolved = payload["resolved_config"]
     assert resolved["model_profile"] == "speed"
     assert resolved["pi_profile"] == "pi4"
     assert resolved["sub_model"] == "kimi-k2-turbo-preview"
+    assert resolved["context_format"] == "chunks"
 
 
 if __name__ == "__main__":

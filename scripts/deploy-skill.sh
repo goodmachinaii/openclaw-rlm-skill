@@ -15,10 +15,11 @@ SKILL_DIR="$HOME/.openclaw/workspace/skills/rlm-engine"
 
 # Create directory if it doesn't exist
 mkdir -p "$SKILL_DIR"
+mkdir -p "$SKILL_DIR/src"
 
 # Copy skill files
 cp "$SCRIPT_DIR/skill/SKILL.md" "$SKILL_DIR/"
-cp "$SCRIPT_DIR/src/rlm_bridge.py" "$SKILL_DIR/"
+cp "$SCRIPT_DIR/src/rlm_bridge.py" "$SKILL_DIR/src/rlm_bridge.py"
 
 echo "Skill deployed to: $SKILL_DIR"
 echo ""

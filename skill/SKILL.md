@@ -1,9 +1,7 @@
 ---
 name: rlm-engine
-description: >
-  Deep programmatic reasoning over complete conversation history using RLM.
-  Only activates when user EXPLICITLY requests it with "/rlm" or "use RLM".
-  Takes 15-45 seconds, costs ~$0.01-0.05 per query.
+description: Deep programmatic reasoning over complete conversation history using RLM. Activates only when explicitly requested.
+metadata: {"openclaw":{"emoji":"🧠","requires":{"bins":["uv"],"env":["MOONSHOT_API_KEY"]},"primaryEnv":"MOONSHOT_API_KEY"}}
 version: 4.2.0
 ---
 
@@ -60,7 +58,7 @@ Do not try to guess — if they don't say "RLM", use memory_search.
 2. Execute:
 
 ```bash
-cd ~/openclaw-rlm-skill && uv run python src/rlm_bridge.py \
+cd {baseDir} && uv run python src/rlm_bridge.py \
   --profile-model cost \
   --query "EXACT USER QUESTION (without the /rlm prefix)"
 ```
