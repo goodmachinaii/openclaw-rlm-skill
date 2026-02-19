@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RLM Bridge for OpenClaw — v4.2
+RLM Bridge for OpenClaw — v4.2.1
 Connects OpenClaw with RLM via Moonshot API (Kimi models).
 
 Design goals:
@@ -870,7 +870,7 @@ def run_rlm(
 
 
 async def main_async():
-    parser = argparse.ArgumentParser(description="RLM Bridge for OpenClaw v4.2")
+    parser = argparse.ArgumentParser(description="RLM Bridge for OpenClaw v4.2.1")
     parser.add_argument("--query", required=True, help="User question")
     parser.add_argument(
         "--workspace",

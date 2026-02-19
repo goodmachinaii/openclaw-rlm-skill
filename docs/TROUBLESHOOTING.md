@@ -43,6 +43,14 @@ Then run with explicit path:
 uv run python src/rlm_bridge.py --query "test" --sessions-dir "/correct/path/sessions"
 ```
 
+### Skill does not activate from chat
+
+Symptom: normal chat question does not run RLM skill.
+
+Actions:
+1. Use explicit trigger in OpenClaw chat: `/rlm <question>`.
+2. If running bridge directly from terminal, do **not** include `/rlm` in `--query`.
+
 ### Slow responses on Raspberry Pi
 
 Likely causes:
@@ -76,6 +84,19 @@ uv run python src/rlm_bridge.py \
 Use `rlms` package name:
 
 ```bash
+uv pip install "rlms>=0.1.0,<0.2.0"
+```
+
+### `unexpected keyword argument 'compaction'`
+
+Symptom: older bridge/code path or mismatched environment throws constructor error.
+
+Actions:
+1. Pull latest bridge code (v4.2.1+), which applies compatibility by `RLM.__init__` signature.
+2. Reinstall dependencies in the skill folder:
+
+```bash
+uv venv --python 3.12 2>/dev/null || uv venv
 uv pip install "rlms>=0.1.0,<0.2.0"
 ```
 

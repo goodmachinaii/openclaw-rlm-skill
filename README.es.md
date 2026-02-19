@@ -9,7 +9,7 @@ Mantiene la esencia del repositorio original de Alex Zhang:
 
 ## Versión
 
-Actual: `v4.2.0`
+Actual: `v4.2.1`
 
 ## Qué agrega esta versión
 
@@ -29,6 +29,7 @@ Actual: `v4.2.0`
 - Sesiones máximas: `30`
 - Contexto máximo: `200000` chars
 - Iteraciones máximas: `5`
+- Compaction: `off` (salvo que el perfil Pi lo active, y solo si la versión actual de `rlms` soporta esos kwargs)
 
 ## Inicio rápido (Linux / Raspberry Pi OS)
 

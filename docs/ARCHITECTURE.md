@@ -21,7 +21,7 @@ RLM (rlms)
   |- Root model: kimi-k2.5 (default)
   |- Sub model: kimi-k2.5 (default)
   |- Optional sub-model override (e.g., turbo-preview)
-  |- Optional compaction for long iterative runs
+  |- Optional compaction for long iterative runs (best-effort by rlms version)
   v
 Moonshot API (OpenAI-compatible)
   |- https://api.moonshot.ai/v1
@@ -46,6 +46,7 @@ JSON result -> OpenClaw -> Telegram
 - Keeps default RLM system prompt behavior.
 - Uses local REPL environment (`environment="local"`).
 - Uses `max_depth=1` (current practical depth).
+- Uses compatibility checks to pass optional kwargs (like compaction) only when supported by installed `rlms`.
 
 ### 4. Moonshot API
 - OpenAI-compatible API endpoint.
@@ -60,15 +61,17 @@ JSON result -> OpenClaw -> Telegram
 
 ### Raspberry Pi profiles
 - `off`: standard defaults
-- `pi4`: smaller context/session limits + compaction enabled
-- `pi8`: medium limits + compaction enabled
+- `pi4`: smaller context/session limits + compaction preferred when available
+- `pi8`: medium limits + compaction preferred when available
 
 ### Performance/safety flags
 - `--max-sessions`
 - `--max-context-chars`
 - `--max-iterations`
+- `--context-format auto|string|chunks`
 - `--compaction` / `--no-compaction`
 - `--compaction-threshold`
+- `--agent-id`
 - `--max-retries`
 - `--request-timeout`
 

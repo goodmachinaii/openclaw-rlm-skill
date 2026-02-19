@@ -1,6 +1,6 @@
 [project]
 name = "openclaw-rlm-skill"
-version = "4.2.0"
+version = "4.2.1"
 description = "OpenClaw skill that integrates Recursive Language Models for deep programmatic memory analysis"
 readme = "README.md"
 license = {text = "MIT"}

@@ -9,7 +9,7 @@ This project keeps the core RLM behavior from Alex Zhang's repository:
 
 ## Version
 
-Current: `v4.2.0`
+Current: `v4.2.1`
 
 ## What It Adds
 

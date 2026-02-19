@@ -2,7 +2,7 @@
 name: rlm-engine
 description: Deep programmatic reasoning over complete conversation history using RLM. Activates only when explicitly requested.
 metadata: {"openclaw":{"emoji":"🧠","requires":{"bins":["uv"],"env":["MOONSHOT_API_KEY"]},"primaryEnv":"MOONSHOT_API_KEY"}}
-version: 4.2.0
+version: 4.2.1
 ---
 
 # RLM Engine — Explicit deep reasoning over history
@@ -38,7 +38,7 @@ Do NOT use this skill based on question complexity — let the user decide.
 | Tool | Speed | Cost | When to use |
 |------|-------|------|-------------|
 | memory_search (native) | ~100ms | Free | Default for all memory questions |
-| rlm-engine (this skill) | 15-45s | $0.01-0.05 | Only when user explicitly asks |
+| rlm-engine (this skill) | 15-180s | $0.01-0.10 | Only when user explicitly asks |
 
 The user knows when they need deep analysis and will request it explicitly.
 Do not try to guess — if they don't say "RLM", use memory_search.
@@ -53,7 +53,7 @@ Do not try to guess — if they don't say "RLM", use memory_search.
 ## Invocation
 
 1. Confirm activation:
-   "Running RLM deep analysis... this takes 15-45 seconds."
+   "Running RLM deep analysis... this can take 15-180 seconds depending on context and model iterations."
 
 2. Execute:
 
