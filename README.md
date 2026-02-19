@@ -17,7 +17,7 @@ Current: `v4.2.0`
 - Async session loading for lower local I/O overhead.
 - Model profiles (`cost`, `balanced`, `speed`).
 - Raspberry Pi resource profiles (`pi4`, `pi8`).
-- Optional compaction controls for long iterative runs.
+- Optional compaction controls for long iterative runs (best-effort: depends on installed `rlms` API).
 - Retry/timeout controls for transient API/network failures.
 - Per-run cost estimate from token usage summary.
 
@@ -29,9 +29,11 @@ Current: `v4.2.0`
 - Max sessions: `30`
 - Max context chars: `200000`
 - Max iterations: `5`
-- Compaction: `off` (unless Pi profile enables it)
+- Compaction: `off` (unless Pi profile enables it, and only if current `rlms` version supports compaction kwargs)
 
-## Quick Start
+## Quick Start (Linux / Raspberry Pi OS)
+
+`install.sh` uses `apt` for missing system packages, so it is intended for Debian/Ubuntu-based systems.
 
 ```bash
 git clone https://github.com/goodmachinaii/openclaw-rlm-skill.git
@@ -51,6 +53,10 @@ Run manually:
 uv run python src/rlm_bridge.py --query "Summarize our infra decisions this week"
 ```
 
+Important:
+- Use `/rlm` only when triggering from OpenClaw chat.
+- When you run `rlm_bridge.py` directly, pass the natural question without `/rlm` prefix.
+
 ## Recommended Invocations
 
 ### Cost-optimized (recommended)
@@ -58,7 +64,7 @@ uv run python src/rlm_bridge.py --query "Summarize our infra decisions this week
 ```bash
 uv run python src/rlm_bridge.py \
   --profile-model cost \
-  --query "/rlm count how many times we discussed Docker"
+  --query "count how many times we discussed Docker"
 ```
 
 ### Faster sub-calls
@@ -66,7 +72,7 @@ uv run python src/rlm_bridge.py \
 ```bash
 uv run python src/rlm_bridge.py \
   --profile-model speed \
-  --query "/rlm cluster all pending decisions by topic"
+  --query "cluster all pending decisions by topic"
 ```
 
 ### Raspberry Pi 4GB safe profile
@@ -74,7 +80,7 @@ uv run python src/rlm_bridge.py \
 ```bash
 uv run python src/rlm_bridge.py \
   --pi-profile pi4 \
-  --query "/rlm compare this week vs last week priorities"
+  --query "compare this week vs last week priorities"
 ```
 
 ### Long iterative runs with compaction
@@ -84,7 +90,7 @@ uv run python src/rlm_bridge.py \
   --compaction \
   --compaction-threshold 0.75 \
   --max-iterations 7 \
-  --query "/rlm build a timeline of architecture changes"
+  --query "build a timeline of architecture changes"
 ```
 
 ## Main CLI Flags

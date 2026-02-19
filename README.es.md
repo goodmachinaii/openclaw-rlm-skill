@@ -17,7 +17,7 @@ Actual: `v4.2.0`
 - Carga asíncrona de sesiones.
 - Perfiles de modelo (`cost`, `balanced`, `speed`).
 - Perfiles Raspberry Pi (`pi4`, `pi8`).
-- Compaction opcional para corridas largas.
+- Compaction opcional para corridas largas (best-effort: depende de la API de `rlms` instalada).
 - Reintentos y timeout configurables.
 - Estimación de costo por corrida usando uso real de tokens.
 
@@ -30,7 +30,9 @@ Actual: `v4.2.0`
 - Contexto máximo: `200000` chars
 - Iteraciones máximas: `5`
 
-## Inicio rápido
+## Inicio rápido (Linux / Raspberry Pi OS)
+
+`install.sh` usa `apt` para paquetes del sistema, así que está orientado a Debian/Ubuntu.
 
 ```bash
 git clone https://github.com/goodmachinaii/openclaw-rlm-skill.git
@@ -50,6 +52,10 @@ Ejecución básica:
 uv run python src/rlm_bridge.py --query "Resume decisiones de infraestructura de esta semana"
 ```
 
+Importante:
+- Usa `/rlm` solo cuando activas el skill desde el chat de OpenClaw.
+- Si ejecutas `rlm_bridge.py` directo, pasa la pregunta normal sin prefijo `/rlm`.
+
 ## Comandos recomendados
 
 ### Costo optimizado (recomendado)
@@ -57,7 +63,7 @@ uv run python src/rlm_bridge.py --query "Resume decisiones de infraestructura de
 ```bash
 uv run python src/rlm_bridge.py \
   --profile-model cost \
-  --query "/rlm cuántas veces hablamos de Docker"
+  --query "cuántas veces hablamos de Docker"
 ```
 
 ### Menor latencia en sub-llamadas
@@ -65,7 +71,7 @@ uv run python src/rlm_bridge.py \
 ```bash
 uv run python src/rlm_bridge.py \
   --profile-model speed \
-  --query "/rlm agrupa decisiones pendientes por tema"
+  --query "agrupa decisiones pendientes por tema"
 ```
 
 ### Raspberry Pi 4GB
@@ -73,7 +79,7 @@ uv run python src/rlm_bridge.py \
 ```bash
 uv run python src/rlm_bridge.py \
   --pi-profile pi4 \
-  --query "/rlm compara prioridades de esta semana vs la pasada"
+  --query "compara prioridades de esta semana vs la pasada"
 ```
 
 ### Corridas largas con compaction
@@ -83,7 +89,7 @@ uv run python src/rlm_bridge.py \
   --compaction \
   --compaction-threshold 0.75 \
   --max-iterations 7 \
-  --query "/rlm construye una línea de tiempo de cambios de arquitectura"
+  --query "construye una línea de tiempo de cambios de arquitectura"
 ```
 
 ## Flags principales
